@@ -6,7 +6,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/ui/text';
 import { Colors, Radius, Spacing } from '@/constants/theme';
+import { useAuth } from '@/contexts/auth-context';
 import { useSession } from '@/features/session/session-context';
+import { useDriver } from '@/hooks/use-driver';
 
 type Entry = {
   icon: React.ComponentProps<typeof Ionicons>['name'];
@@ -26,10 +28,23 @@ export default function MenuScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { phase, actions } = useSession();
+  const { user, logout } = useAuth();
+  // Falls back to the token claims while the backend record loads, and stays
+  // on them for an account that has no driver record yet (social sign-in).
+  const { data: driver } = useDriver(user?.sub);
+
+  const displayName = driver?.name ?? user?.name ?? user?.preferred_username ?? 'Deliverer';
+  const vehicleClass = driver?.vehicle?.type;
 
   const goOffline = () => {
     actions.stopSession();
     router.back();
+  };
+
+  const signOut = async () => {
+    actions.stopSession();
+    await logout();
+    router.replace('/');
   };
 
   return (
@@ -48,12 +63,13 @@ export default function MenuScreen() {
           <View style={styles.avatar}>
             <Ionicons name="person" size={26} color={Colors.white} />
           </View>
-          <View>
-            <Text weight="bold" size={18}>
-              Ahmed B.
+          <View style={styles.profileText}>
+            <Text weight="bold" size={18} numberOfLines={1}>
+              {displayName}
             </Text>
             <Text size={14} color={Colors.textSecondary}>
               {phase === 'offline' ? 'Offline' : 'On shift'}
+              {vehicleClass ? ` · ${vehicleClass.toLowerCase()}` : ''}
             </Text>
           </View>
         </View>
@@ -82,6 +98,16 @@ export default function MenuScreen() {
             </Text>
           </Pressable>
         ) : null}
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={signOut}
+          style={({ pressed }) => [styles.entry, pressed && styles.pressed]}>
+          <Ionicons name="log-out-outline" size={22} color="#D64545" />
+          <Text size={16} color="#D64545">
+            Log out
+          </Text>
+        </Pressable>
       </Animated.View>
     </View>
   );
@@ -110,6 +136,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.three,
     paddingBottom: Spacing.five,
+  },
+  profileText: {
+    flex: 1,
   },
   avatar: {
     width: 52,

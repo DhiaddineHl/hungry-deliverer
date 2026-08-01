@@ -13,13 +13,27 @@ export function OrDivider() {
   );
 }
 
-/** The white "Log in with Google" button. Static for now. */
-export function GoogleButton({ onPress }: { onPress: () => void }) {
+/**
+ * The white "Log in with Google" button. Drives Keycloak's Google identity
+ * provider through the browser (PKCE) flow — see the auth context.
+ */
+export function GoogleButton({
+  onPress,
+  disabled,
+}: {
+  onPress: () => void;
+  disabled?: boolean;
+}) {
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [styles.google, pressed && styles.pressed]}>
+      style={({ pressed }) => [
+        styles.google,
+        (pressed || disabled) && styles.pressed,
+      ]}>
       {/* Google's mark; stand-in glyph until the brand asset is added. */}
       <View style={styles.googleMark}>
         <Ionicons name="logo-google" size={20} color="#4285F4" />

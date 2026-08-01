@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import {
   KeyboardAvoidingView,
@@ -27,6 +27,7 @@ import { TextField } from '@/components/auth/text-field';
 import { PrimaryButton } from '@/components/ui/primary-button';
 import { Text } from '@/components/ui/text';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { useAuth, wasCancelled } from '@/contexts/auth-context';
 import { loginSchema, type LoginValues } from '@/features/auth/schemas';
 
 // The landing → login reveal plays only the first time the app is opened.
@@ -40,6 +41,10 @@ export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
+  const { login, loginWithGoogle } = useAuth();
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   // The artwork's resting position (translateY 0) is the final login state, with
   // the logo near the top. For the landing frame it starts pushed down — roughly
@@ -70,9 +75,35 @@ export default function LoginScreen() {
     defaultValues: { email: '', password: '' },
   });
 
-  const onSubmit = (_values: LoginValues) => {
-    // Authentication is stubbed for now — go straight to the delivery app.
-    router.replace('/delivery');
+  const onSubmit = async (values: LoginValues) => {
+    setAuthError(null);
+    setIsSubmitting(true);
+    try {
+      const result = await login(values.email.trim(), values.password);
+      if (result.success) {
+        router.replace('/delivery');
+      } else {
+        setAuthError(result.error ?? 'Login failed. Please try again.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const onGoogleLogin = async () => {
+    setAuthError(null);
+    setIsGoogleLoading(true);
+    try {
+      const result = await loginWithGoogle();
+      if (result.success) {
+        router.replace('/delivery');
+      } else if (!wasCancelled(result.error)) {
+        // Dismissing the browser is a choice, not a failure worth a red banner.
+        setAuthError(result.error ?? 'Google sign-in failed');
+      }
+    } finally {
+      setIsGoogleLoading(false);
+    }
   };
 
   return (
@@ -100,6 +131,14 @@ export default function LoginScreen() {
                 Hungry? We got you !
               </Text>
             </View>
+
+            {authError ? (
+              <View style={styles.errorBanner}>
+                <Text size={14} color="#B3261E">
+                  {authError}
+                </Text>
+              </View>
+            ) : null}
 
             <TextField
               control={control}
@@ -134,8 +173,9 @@ export default function LoginScreen() {
             </Pressable>
 
             <PrimaryButton
-              label="LOG IN"
+              label={isSubmitting ? 'LOGGING IN…' : 'LOG IN'}
               onPress={handleSubmit(onSubmit)}
+              disabled={isSubmitting || isGoogleLoading}
               style={styles.submit}
             />
 
@@ -154,7 +194,7 @@ export default function LoginScreen() {
             </View>
 
             <OrDivider />
-            <GoogleButton onPress={() => {}} />
+            <GoogleButton onPress={onGoogleLogin} disabled={isGoogleLoading || isSubmitting} />
             <TermsFooter />
           </ScrollView>
         </KeyboardAvoidingView>
@@ -192,6 +232,12 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     marginTop: Spacing.one,
+  },
+  errorBanner: {
+    padding: Spacing.three,
+    marginBottom: Spacing.four,
+    borderRadius: Radius.md,
+    backgroundColor: '#FDECEA',
   },
   field: {
     marginBottom: Spacing.four,
