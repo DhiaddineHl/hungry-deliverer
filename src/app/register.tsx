@@ -313,7 +313,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    maxHeight: '82%',
+    // A definite height (not maxHeight): an auto-height absolute card leaves the
+    // ScrollView unbounded, so it sizes to its content and clips instead of
+    // scrolling. See the login screen for the same note.
+    height: '82%',
     backgroundColor: Colors.white,
     borderTopLeftRadius: Radius.xl,
     borderTopRightRadius: Radius.xl,

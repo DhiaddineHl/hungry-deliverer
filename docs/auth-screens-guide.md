@@ -226,7 +226,7 @@ export function AuthBackdrop({ heroStyle }: Props) {
 cardWrap: {
   position: 'absolute',
   left: 0, right: 0, bottom: 0,
-  maxHeight: '68%',            // login; register uses '82%' (more fields)
+  height: '68%',               // login; register uses '82%' (more fields)
   backgroundColor: Colors.white,
   borderTopLeftRadius: Radius.xl,
   borderTopRightRadius: Radius.xl,
@@ -238,9 +238,12 @@ cardContent: {
 },
 ```
 
-`maxHeight` (not a fixed height) is what lets the artwork above stay visible
-while the card grows only as far as its content needs. Pick the percentage from
-the field count.
+The percentage is what leaves the artwork above visible; pick it from the field
+count. It must be a **definite `height`, not `maxHeight`**. An absolutely
+positioned card sized only by `maxHeight` has an auto height, so the `ScrollView`
+inside it is measured against unbounded space: it sizes itself to its content and
+gets clipped by the cap rather than scrolling. Both forms are taller than their
+sheet on every phone size, so a fixed percentage costs nothing visually.
 
 ### 3.3 Keyboard + scroll
 
@@ -601,7 +604,7 @@ screens override it with `style="light"` because their backdrop is navy.
 - [ ] Submit empty: per-field errors, red borders, layout doesn't jump.
 - [ ] Sign-up with mismatched passwords: error lands on **Verify Password**.
 - [ ] Password eye toggles, announces show/hide, and doesn't submit the form.
-- [ ] Tall and small devices: artwork framing holds, card `maxHeight` still leaves
-      the logo visible.
+- [ ] Tall and small devices: artwork framing holds, the card percentage still
+      leaves the logo visible, and both forms scroll to the terms footer.
 - [ ] Status bar glyphs are light over the navy on both screens.
 - [ ] `npm run lint` clean; new animation code uses `.get()`/`.set()`.

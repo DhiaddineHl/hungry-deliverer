@@ -216,7 +216,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    maxHeight: '68%',
+    // A definite height (not maxHeight): an auto-height absolute card leaves the
+    // ScrollView unbounded, so it sizes to its content and clips instead of
+    // scrolling. The form is taller than the sheet on every phone anyway.
+    height: '68%',
     backgroundColor: Colors.white,
     borderTopLeftRadius: Radius.xl,
     borderTopRightRadius: Radius.xl,
