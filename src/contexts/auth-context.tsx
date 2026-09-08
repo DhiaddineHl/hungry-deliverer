@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import * as AuthSession from 'expo-auth-session';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
-import { driverQueryOptions } from '@/hooks/use-driver';
+import { ensureDriverForAccount } from '@/hooks/use-driver';
 import {
   exchangeAuthorizationCode,
   fetchUserInfo,
@@ -24,6 +24,16 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
+  /**
+   * Whether the driver record behind the current session has been resolved —
+   * read from the backend, or created for an account the app never registered
+   * (see `ensureDriverForAccount`). A Google sign-in always lands here with no
+   * record yet, so screens that read the profile can wait on this instead of
+   * rendering an empty one.
+   *
+   * `true` with no record simply means the lookup finished and there is none.
+   */
+  isDriverResolved: boolean;
   login: (email: string, password: string) => Promise<AuthResult>;
   // Registration deliberately lives outside this context: it is a backend
   // mutation (useRegisterDriver), because the backend — not the app — holds
@@ -62,6 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isLoading: true,
     user: null,
   });
+  const [isDriverResolved, setIsDriverResolved] = useState(false);
 
   const redirectUri = AuthSession.makeRedirectUri({
     scheme: 'hungrydeliverer',
@@ -81,16 +92,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       redirectUri,
       scopes: ['openid', 'profile', 'email'],
       usePKCE: true,
+      // Without this Keycloak silently resumes its own browser SSO session —
+      // the KEYCLOAK_IDENTITY cookie outlives our back-channel logout, which
+      // only revokes the refresh token — so "Continue with Google" would
+      // re-authenticate the previous deliverer with no chance to switch.
+      // Keycloak must ALSO forward an account chooser to Google (Identity
+      // providers > google > Advanced > Prompt = "select_account"), or Google
+      // auto-selects its remembered account on the next hop.
+      prompt: AuthSession.Prompt.Login,
       extraParams: { kc_idp_hint: 'google' },
     },
     discovery
   );
 
   // Warm the driver record into the query cache as soon as we have an account
-  // id, so every screen that reads the profile already has it.
-  const prefetchDriver = useCallback(
+  // id, so every screen that reads the profile already has it — creating the
+  // record first when the account has none, which is the normal state of a
+  // Google sign-in (Keycloak provisions those accounts itself, so nothing ever
+  // registered them with the backend).
+  //
+  // Fire-and-forget on purpose: the session is already valid, so a backend
+  // hiccup here must not lock the deliverer out of the app. Screens that need
+  // the record refetch it through `useDriver`.
+  const ensureDriver = useCallback(
     (sub?: string | null) => {
-      if (sub) queryClient.prefetchQuery(driverQueryOptions(sub));
+      if (!sub) {
+        setIsDriverResolved(true);
+        return;
+      }
+      setIsDriverResolved(false);
+      ensureDriverForAccount(queryClient, sub)
+        .catch((error) => {
+          console.warn('[Auth] Could not resolve the driver record:', error);
+        })
+        .finally(() => setIsDriverResolved(true));
     },
     [queryClient]
   );
@@ -116,7 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (tokenResult.success) {
             const userInfo = await fetchUserInfo();
             setState({ isAuthenticated: true, isLoading: false, user: userInfo });
-            prefetchDriver(userInfo?.sub);
+            ensureDriver(userInfo?.sub);
           }
           return tokenResult;
         }
@@ -128,7 +163,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: false, error: 'Authentication failed. Please try again.' };
       }
     },
-    [redirectUri, prefetchDriver]
+    [redirectUri, ensureDriver]
   );
 
   useEffect(() => {
@@ -137,6 +172,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const tokens = await getTokens();
         if (!tokens) {
           setState({ isAuthenticated: false, isLoading: false, user: null });
+          setIsDriverResolved(true);
           return;
         }
 
@@ -145,15 +181,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (!result.success) {
             await clearTokens();
             setState({ isAuthenticated: false, isLoading: false, user: null });
+            setIsDriverResolved(true);
             return;
           }
         }
 
         const userInfo = await fetchUserInfo();
         setState({ isAuthenticated: true, isLoading: false, user: userInfo });
-        prefetchDriver(userInfo?.sub);
+        ensureDriver(userInfo?.sub);
       } catch {
         setState({ isAuthenticated: false, isLoading: false, user: null });
+        setIsDriverResolved(true);
       }
     })();
     // Runs once on mount — the router guard keys off isLoading.
@@ -166,11 +204,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (result.success) {
         const userInfo = await fetchUserInfo();
         setState({ isAuthenticated: true, isLoading: false, user: userInfo });
-        prefetchDriver(userInfo?.sub);
+        ensureDriver(userInfo?.sub);
       }
       return result;
     },
-    [prefetchDriver]
+    [ensureDriver]
   );
 
   const loginWithGoogleFn = useCallback(
@@ -194,6 +232,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     useDriverStore.getState().clear();
     queryClient.clear();
     setState({ isAuthenticated: false, isLoading: false, user: null });
+    setIsDriverResolved(false);
   }, [queryClient]);
 
   const refreshSession = useCallback(async (): Promise<boolean> => {
@@ -208,6 +247,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider
       value={{
         ...state,
+        isDriverResolved,
         login,
         loginWithGoogle: loginWithGoogleFn,
         reloadUser,

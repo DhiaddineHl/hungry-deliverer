@@ -1,7 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import { isApiError } from '@/services/api/client';
 import {
+  createDriverForAccount,
   getDriverByAccount,
   registerDriver,
   updateDriver,
@@ -34,6 +35,36 @@ export function driverQueryOptions(keycloakUserId: string | null | undefined) {
     // Profile data rarely changes outside this device's own mutations.
     staleTime: 5 * 60 * 1000,
   };
+}
+
+/**
+ * Guarantees the logged-in account has a driver record, and seeds the cache
+ * with it.
+ *
+ * Accounts created by in-app registration already have one (the backend writes
+ * the Keycloak user, the Driver and the Vehicle in a single transaction).
+ * Accounts created by Keycloak itself — a Google sign-in, brokered by Keycloak
+ * — do not: nothing ever called `POST /drivers` for them, and it would answer
+ * 409 if it did, because that endpoint always provisions a new Keycloak user.
+ * `POST /drivers/me` fills that gap and is idempotent, so this is safe to run
+ * after every login and session restore, including for accounts that predate
+ * it.
+ *
+ * The record it creates carries no vehicle class, so the deliverer stays
+ * PENDING_APPROVAL and undispatchable until one is set (`useUpdateDriver`) or
+ * the back-office approves them — the same gate every self-registered
+ * deliverer passes through.
+ */
+export async function ensureDriverForAccount(
+  queryClient: QueryClient,
+  keycloakUserId: string
+): Promise<Driver | null> {
+  const existing = await queryClient.fetchQuery(driverQueryOptions(keycloakUserId));
+  if (existing) return existing;
+
+  const created = await createDriverForAccount();
+  queryClient.setQueryData(driverKeys.detail(keycloakUserId), created);
+  return created;
 }
 
 /** The driver record linked to a Keycloak account (`sub`), or `null`. */

@@ -137,3 +137,70 @@ export interface Driver {
   enabled?: boolean;
   keycloakUserId?: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// E-mail verification (DriverVerificationService)
+// ---------------------------------------------------------------------------
+
+/**
+ * Answer to `POST /drivers/verification/send`: everything the code screen
+ * needs to draw itself. `codeLength` is authoritative — the backend decides how
+ * many digits it generates, so the screen renders that many boxes rather than
+ * assuming a number.
+ */
+export interface VerificationChallenge {
+  email: string;
+  codeLength: number;
+  expiresInSeconds: number;
+  /** Seconds the Resend button stays disabled after this send. */
+  resendAvailableInSeconds: number;
+  /** The address was already confirmed; nothing was sent and the app may move on. */
+  alreadyVerified: boolean;
+  /** False when the backend has no mail transport (dev) and only logged the code. */
+  delivered: boolean;
+}
+
+/** Answer to `POST /drivers/verification/confirm`. */
+export interface VerificationResult {
+  email: string;
+  keycloakUserId: string;
+  verified: boolean;
+}
+
+/**
+ * Answer to `POST /drivers/password-reset/verify` — the middle step of a
+ * forgotten-password reset.
+ */
+export interface PasswordResetTicket {
+  email: string;
+  /**
+   * The single-use secret that authorizes the password change. Held in memory
+   * for one screen and never persisted — see `store/password-reset-store.ts`.
+   */
+  ticket: string;
+  expiresInSeconds: number;
+}
+
+/** Answer to `POST /drivers/password-reset/confirm`. */
+export interface PasswordResetResult {
+  email: string;
+  updated: boolean;
+}
+
+/**
+ * Answer to `POST /drivers/verification/lookup` — the identification step.
+ * One address in, and `registered` decides which screen comes next: the
+ * password field for an address that already has a deliverer account, the
+ * sign-up form for one that does not.
+ *
+ * Deliverer-scoped like the two calls above: the backend resolves the address
+ * against Driver records only, so a customer's address answers
+ * `registered: false` here.
+ */
+export interface AccountLookup {
+  email: string;
+  /** A deliverer is registered under this address — ask for a password. */
+  registered: boolean;
+  /** That account has already confirmed the address. */
+  emailVerified: boolean;
+}

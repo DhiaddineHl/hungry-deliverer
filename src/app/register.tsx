@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -16,7 +16,12 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AuthBackdrop } from '@/components/auth/auth-backdrop';
-import { GoogleButton, OrDivider, TermsFooter } from '@/components/auth/auth-common';
+import {
+  GoogleButton,
+  IdentityRow,
+  OrDivider,
+  TermsFooter,
+} from '@/components/auth/auth-common';
 import { TextField } from '@/components/auth/text-field';
 import { VehicleClassField } from '@/components/auth/vehicle-class-field';
 import { PrimaryButton } from '@/components/ui/primary-button';
@@ -25,15 +30,25 @@ import { Colors, Fonts, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useAuth, wasCancelled } from '@/contexts/auth-context';
 import { MOTORIZED_VEHICLES, registerSchema, type RegisterValues } from '@/features/auth/schemas';
 import { useRegisterDriver } from '@/hooks/use-driver';
+import { usePendingVerificationStore } from '@/store/pending-verification-store';
 
 /** Fixed until multi-country support lands; prefixed onto the phone number. */
 const COUNTRY_CODE = '+216';
 
+/**
+ * Account creation, reached only from the identification screen and only for
+ * an address it found no account for. That address arrives as a route param
+ * and is not asked for again — nor is there a link back to a separate login
+ * screen, because there is no longer one to go to.
+ */
 export default function RegisterScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ email?: string }>();
+  const email = params.email ?? '';
   const insets = useSafeAreaInsets();
-  const { login, loginWithGoogle } = useAuth();
+  const { loginWithGoogle } = useAuth();
   const registerDriver = useRegisterDriver();
+  const startVerification = usePendingVerificationStore((state) => state.start);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const isSubmitting = registerDriver.isPending;
@@ -44,7 +59,6 @@ export default function RegisterScreen() {
       firstName: '',
       lastName: '',
       phone: '',
-      email: '',
       password: '',
       verifyPassword: '',
       vehicleType: undefined,
@@ -62,12 +76,14 @@ export default function RegisterScreen() {
     setAuthError(null);
     try {
       // One backend call creates the Keycloak login, the Driver record and
-      // the vehicle for the chosen class, and grants DRIVER +
-      // VEHICLE_<CLASS> on the account.
+      // the vehicle for the chosen class, and grants DRIVER + VEHICLE_<CLASS>
+      // on the account. It mails nothing: the verification screen asks for the
+      // code itself, which is also what makes it work for a deliverer who
+      // abandoned the step and came back later.
       await registerDriver.mutateAsync({
         firstName: values.firstName,
         lastName: values.lastName,
-        email: values.email.trim(),
+        email,
         password: values.password,
         phoneNumber: `${COUNTRY_CODE}${values.phone.replace(/\s/g, '')}`,
         vehicleType: values.vehicleType,
@@ -75,10 +91,14 @@ export default function RegisterScreen() {
         licenseNumber: needsPlate ? values.licenseNumber?.trim() || undefined : undefined,
       });
 
-      // The account is usable immediately (permanent password), so log in
-      // right away rather than leaving the new deliverer without a session.
-      const result = await login(values.email.trim(), values.password);
-      router.replace(result.success ? '/delivery' : '/');
+      // No sign-in here any more: the account exists but its e-mail is
+      // unproven, and the router guard would bounce the session straight back
+      // to the code screen anyway. The verification screen signs in once the
+      // code is accepted — which is why it needs the password, handed over in
+      // memory rather than through route params.
+      startVerification({ email, password: values.password, firstName: values.firstName });
+
+      router.push('/verification');
     } catch (error) {
       setAuthError(
         error instanceof Error ? error.message : 'An unexpected error occurred. Please try again.'
@@ -91,17 +111,48 @@ export default function RegisterScreen() {
     setIsGoogleLoading(true);
     try {
       const result = await loginWithGoogle();
-      if (result.success) {
-        // The Keycloak account exists but has no driver record yet — the
-        // delivery screen resolves that through useDriver()'s 404-as-null.
-        router.replace('/delivery');
-      } else if (!wasCancelled(result.error)) {
+      // Nothing to route on success: the Keycloak account exists but has no
+      // driver record yet, the auth context creates one
+      // (`ensureDriverForAccount`), and the root navigator moves the session
+      // on once it is there.
+      if (!result.success && !wasCancelled(result.error)) {
         setAuthError(result.error ?? 'Google sign-up failed');
       }
     } finally {
       setIsGoogleLoading(false);
     }
   };
+
+  // back(), not push('/'), so the stack doesn't grow when the deliverer
+  // ping-pongs between identification and this screen.
+  const goBackToIdentification = () => (router.canGoBack() ? router.back() : router.replace('/'));
+
+  // Reached without an address (a deep link, or a reload that lost the param):
+  // only the identification step can supply one.
+  if (!email) {
+    return (
+      <View style={styles.screen}>
+        <StatusBar style="light" />
+        <AuthBackdrop />
+        <View style={styles.cardWrap}>
+          <View style={styles.emptyState}>
+            <Text weight="bold" size={22} style={styles.centered}>
+              Which email?
+            </Text>
+            <Text size={15} color={Colors.textSecondary} style={styles.emptyBody}>
+              We do not know which address to create the account for. Start again and we will pick
+              it back up.
+            </Text>
+            <PrimaryButton
+              label="CONTINUE"
+              onPress={() => router.replace('/')}
+              style={styles.emptyButton}
+            />
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screen}>
@@ -125,9 +176,11 @@ export default function RegisterScreen() {
                 Sign Up to Hungry
               </Text>
               <Text size={15} color={Colors.textSecondary} style={styles.subtitle}>
-                Hungry? We got you !
+                Just a few details and you&apos;re in
               </Text>
             </View>
+
+            <IdentityRow email={email} onChange={goBackToIdentification} />
 
             {authError ? (
               <View style={styles.errorBanner}>
@@ -159,17 +212,6 @@ export default function RegisterScreen() {
             </View>
 
             <PhoneField control={control} />
-
-            <TextField
-              control={control}
-              name="email"
-              label="Email"
-              placeholder="Email"
-              keyboardType="email-address"
-              autoComplete="email"
-              textContentType="emailAddress"
-              containerStyle={styles.field}
-            />
 
             <TextField
               control={control}
@@ -222,20 +264,6 @@ export default function RegisterScreen() {
               disabled={isSubmitting || isGoogleLoading}
               style={styles.submit}
             />
-
-            <View style={styles.switchRow}>
-              <Text size={14} color={Colors.textSecondary}>
-                Already have an account ?{' '}
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => router.back()}
-                hitSlop={8}>
-                <Text weight="bold" size={14} color={Colors.orange}>
-                  LOGIN
-                </Text>
-              </Pressable>
-            </View>
 
             <OrDivider />
             <GoogleButton onPress={onGoogleSignup} disabled={isGoogleLoading || isSubmitting} />
@@ -328,7 +356,7 @@ const styles = StyleSheet.create({
   },
   heading: {
     alignItems: 'center',
-    marginBottom: Spacing.five,
+    marginBottom: Spacing.three,
   },
   subtitle: {
     marginTop: Spacing.one,
@@ -400,13 +428,23 @@ const styles = StyleSheet.create({
     marginTop: Spacing.two,
     marginBottom: Spacing.four,
   },
-  switchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexWrap: 'wrap',
-  },
   phoneError: {
     marginTop: Spacing.one,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.five,
+  },
+  centered: {
+    textAlign: 'center',
+  },
+  emptyBody: {
+    marginTop: Spacing.two,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  emptyButton: {
+    marginTop: Spacing.five,
   },
 });

@@ -4,28 +4,26 @@ import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { Text } from '@/components/ui/text';
 import { Colors, Radius, Spacing } from '@/constants/theme';
-import { VEHICLE_TYPES, type VehicleType } from '@/services/api/types';
+import { REGISTRABLE_VEHICLE_TYPES } from '@/features/auth/schemas';
+
+type RegistrableVehicleType = (typeof REGISTRABLE_VEHICLE_TYPES)[number];
 
 type Option = {
-  value: VehicleType;
   label: string;
   icon: React.ComponentProps<typeof Ionicons>['name'];
 };
 
-/** Kept in the backend enum's order so the grid reads from lightest to heaviest. */
-const OPTIONS: Option[] = [
-  { value: 'BICYCLE', label: 'Bicycle', icon: 'bicycle-outline' },
-  { value: 'MOTORCYCLE', label: 'Motorcycle', icon: 'speedometer-outline' },
-  { value: 'SCOOTER', label: 'Scooter', icon: 'flash-outline' },
-  { value: 'CAR', label: 'Car', icon: 'car-outline' },
-  { value: 'VAN', label: 'Van', icon: 'bus-outline' },
-  { value: 'TRUCK', label: 'Truck', icon: 'cube-outline' },
-];
-
-// A missing option would silently drop a class the backend accepts.
-if (OPTIONS.length !== VEHICLE_TYPES.length) {
-  console.warn('[VehicleClassField] options are out of sync with VEHICLE_TYPES');
-}
+/**
+ * How each registrable class is presented. Keyed by the class rather than
+ * listed, so the record is exhaustive by construction: adding a class to
+ * REGISTRABLE_VEHICLE_TYPES without a tile here is a type error, not a tile
+ * that silently goes missing at runtime.
+ */
+const OPTIONS: Record<RegistrableVehicleType, Option> = {
+  MOTORCYCLE: { label: 'Motorcycle', icon: 'speedometer-outline' },
+  SCOOTER: { label: 'Scooter', icon: 'flash-outline' },
+  CAR: { label: 'Car', icon: 'car-outline' },
+};
 
 type Props<T extends FieldValues> = {
   control: Control<T>;
@@ -38,6 +36,10 @@ type Props<T extends FieldValues> = {
  * Vehicle class picker for the sign-up form. The chosen class is what the
  * backend uses to create the deliverer's vehicle and to grant the matching
  * VEHICLE_<CLASS> realm role, so it is a required registration field.
+ *
+ * It offers the classes in `REGISTRABLE_VEHICLE_TYPES` — a subset of what the
+ * backend accepts. The sign-up schema enforces the same list, so a class that
+ * is not shown here cannot be submitted either.
  */
 export function VehicleClassField<T extends FieldValues>({
   control,
@@ -55,15 +57,16 @@ export function VehicleClassField<T extends FieldValues>({
             {label}
           </Text>
           <View style={styles.grid}>
-            {OPTIONS.map((option) => {
-              const selected = value === option.value;
+            {REGISTRABLE_VEHICLE_TYPES.map((vehicleType) => {
+              const option = OPTIONS[vehicleType];
+              const selected = value === vehicleType;
               return (
                 <Pressable
-                  key={option.value}
+                  key={vehicleType}
                   accessibilityRole="radio"
                   accessibilityState={{ selected }}
                   accessibilityLabel={option.label}
-                  onPress={() => onChange(option.value)}
+                  onPress={() => onChange(vehicleType)}
                   style={[styles.tile, selected && styles.tileSelected]}>
                   <Ionicons
                     name={option.icon}

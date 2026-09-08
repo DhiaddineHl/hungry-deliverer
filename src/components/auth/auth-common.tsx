@@ -45,6 +45,30 @@ export function GoogleButton({
   );
 }
 
+/**
+ * The address identification settled, shown back on the screens that follow it
+ * (password and sign-up) with a way to go change it. Neither screen asks for
+ * the address again, so this is the only place it appears there.
+ */
+export function IdentityRow({ email, onChange }: { email: string; onChange: () => void }) {
+  return (
+    <View style={styles.identityRow}>
+      <Text weight="medium" size={15} numberOfLines={1} style={styles.identityEmail}>
+        {email}
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Change email"
+        onPress={onChange}
+        hitSlop={8}>
+        <Text weight="bold" size={13} color={Colors.orange}>
+          CHANGE
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
 /** The fine-print consent line under the social button. */
 export function TermsFooter() {
   return (
@@ -66,6 +90,16 @@ export function TermsFooter() {
 }
 
 const styles = StyleSheet.create({
+  identityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    marginBottom: Spacing.five,
+  },
+  identityEmail: {
+    flexShrink: 1,
+  },
   orText: {
     textAlign: 'center',
     marginVertical: Spacing.three,
