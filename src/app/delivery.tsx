@@ -24,7 +24,6 @@ import { useTurnByTurn } from '@/features/navigation/use-turn-by-turn';
 import { getMapFocus } from '@/features/session/map-focus';
 import { useSession } from '@/features/session/session-context';
 import type { BusyPlace, SessionPhase } from '@/features/session/types';
-import { useCourierLocation } from '@/hooks/use-courier-location';
 
 function openDialer(phone: string) {
   Linking.openURL(`tel:${phone}`);
@@ -45,8 +44,7 @@ export default function DeliveryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const session = useSession();
-  const { phase, order, previewedLeg, sheetExpanded, actions } = session;
-  const { granted, courier } = useCourierLocation();
+  const { phase, order, previewedLeg, sheetExpanded, actions, locationGranted: granted, courier } = session;
 
   const mapRef = useRef<DeliveryMapHandle>(null);
   const [bottomInset, setBottomInset] = useState(0);

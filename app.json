@@ -40,7 +40,16 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Hungry Deliverer uses your location to find orders near you and guide you to pickups and drop-offs."
+          "locationWhenInUsePermission": "Hungry Deliverer uses your location to find orders near you and guide you to pickups and drop-offs.",
+          "locationAlwaysAndWhenInUsePermission": "Hungry Deliverer uses your location to find orders near you and guide you to pickups and drop-offs."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#E8890C",
+          "defaultChannel": "orders"
         }
       ],
       [

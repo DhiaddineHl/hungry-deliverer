@@ -3,6 +3,7 @@ import * as AuthSession from 'expo-auth-session';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
 import { ensureDriverForAccount } from '@/hooks/use-driver';
+import { clearPushRegistration } from '@/services/notifications/push-service';
 import {
   exchangeAuthorizationCode,
   fetchUserInfo,
@@ -226,6 +227,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logoutFn = useCallback(async () => {
+    // Must run before the session is cleared — the request is authenticated,
+    // so once the tokens are gone the backend can no longer tell whose
+    // device this is (see push-service.ts's own comment).
+    await clearPushRegistration();
     await keycloakLogout();
     // Tokens alone are not enough: the persisted store and the query cache
     // outlive them and would leak one deliverer's data into the next session.

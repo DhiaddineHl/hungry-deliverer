@@ -15,6 +15,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
 import { SessionProvider } from '@/features/session/session-context';
+import { usePushNotifications } from '@/hooks/use-push-notifications';
 import { queryClient, wireAppFocus } from '@/services/api/query-client';
 
 SplashScreen.preventAutoHideAsync();
@@ -49,6 +50,7 @@ function RootNavigator() {
   const router = useRouter();
   const segments = useSegments();
   const { isAuthenticated, isLoading, user } = useAuth();
+  usePushNotifications();
 
   useEffect(() => {
     if (isLoading) return; // wait for the stored session

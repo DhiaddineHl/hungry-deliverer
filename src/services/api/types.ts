@@ -120,6 +120,24 @@ export interface DriverInput {
   password?: string;
 }
 
+/**
+ * One assignment offer, as carried on hungry-notification's
+ * `/topic/drivers/{driverId}/notifications` STOMP topic (`type: 'ORDER_ASSIGNED'`).
+ *
+ * This is genuinely everything the wire message carries — the assignment
+ * engine's `OrderInfo`/`Assignment` records hold pickup/dropoff coordinates
+ * only, no restaurant/customer name, phone, address or item list, and no
+ * payout (`Order`/`OrderItem` hold no money anywhere in this backend). See
+ * `features/session/order-mapper.ts` for how this maps onto the richer
+ * `Order` shape the existing offer/delivery screens expect.
+ */
+export interface AssignmentOffer {
+  deliveryId: string;
+  orderId: string;
+  pickup: { latitude: number; longitude: number };
+  dropoff: { latitude: number; longitude: number };
+}
+
 /** DriverOutputData. */
 export interface Driver {
   id: string;

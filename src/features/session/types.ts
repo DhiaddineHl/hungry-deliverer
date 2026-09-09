@@ -61,6 +61,13 @@ export type Customer = {
 export type Order = {
   /** Displayed as "#2043" and on the full-screen pickup code. */
   reference: string;
+  /**
+   * The backend `Delivery.id` and `Order.id` this offer/session addresses —
+   * required by `respondToDelivery`/`updateDeliveryStatus`. Not shown
+   * anywhere; `reference` is what the UI displays.
+   */
+  deliveryId: string;
+  orderId: string;
   payoutTnd: number;
   totalTnd: number;
   durationMinutes: number;
