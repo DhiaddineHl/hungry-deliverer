@@ -15,9 +15,10 @@ import { reportDriverLocation } from '@/services/api/driver-location-service';
  * position to send WITH the availability call (`PUT /drivers/me/availability`
  * requires one — see that endpoint's javadoc), so a position has to exist
  * before the driver ever goes online, not just after. Reporting to the
- * backend (`POST /api/drivers/{id}/location`) is the part gated by
- * `reportEnabled` — there is no reason to spend battery/network telling the
- * backend about a driver who isn't dispatchable.
+ * backend (a STOMP publish over the shared connection — see
+ * `driver-location-service.ts`) is the part gated by `reportEnabled` — there
+ * is no reason to spend battery/network telling the backend about a driver
+ * who isn't dispatchable.
  *
  * Foreground-only for this pass — background location (`expo-task-manager`)
  * would keep reporting with the app backgrounded, which a real fleet app
