@@ -45,6 +45,10 @@ GOOGLE_MAPS_API_KEY=your_key npx expo run:ios
 The key is injected into the `react-native-maps` config plugin by `app.config.ts`. Without it the
 map tiles render blank in a native build (Expo Go on Android is unaffected).
 
+Release builds (EAS `preview` / `production`) talk to the dev backend over plain `http://`, which
+Android blocks by default outside debug builds. `expo-build-properties` in `app.json` sets
+`android.usesCleartextTraffic: true` for that reason — drop it once the backend is behind HTTPS.
+
 ## Authentication
 
 Login and sign-up run against Keycloak (realm `hungry`, public client `hungry-deliverer-app`),

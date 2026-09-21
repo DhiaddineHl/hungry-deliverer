@@ -7,8 +7,10 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { Text } from '@/components/ui/text';
-import { Colors, Radius, Shadow } from '@/constants/theme';
+import { Radius, Shadow } from '@/constants/theme';
 
 type Props = {
   label: string;
@@ -23,6 +25,8 @@ type Props = {
 };
 
 export function PrimaryButton({ label, onPress, disabled, countdownMs, style }: Props) {
+  const colors = useColors();
+  const styles = useStyles();
   const progress = useSharedValue(0);
 
   useEffect(() => {
@@ -51,18 +55,18 @@ export function PrimaryButton({ label, onPress, disabled, countdownMs, style }: 
       <View style={styles.fillClip} pointerEvents="none">
         {countdownMs ? <Animated.View style={[styles.fill, fillStyle]} /> : null}
       </View>
-      <Text weight="semibold" size={17} color={Colors.white}>
+      <Text weight="semibold" size={17} color={colors.onNavy}>
         {label}
       </Text>
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   button: {
     height: 56,
     borderRadius: Radius.pill,
-    backgroundColor: Colors.orange,
+    backgroundColor: c.orange,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -73,13 +77,13 @@ const styles = StyleSheet.create({
   },
   fill: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: Colors.orangeDeep,
+    backgroundColor: c.orangeDeep,
     transformOrigin: 'right',
   },
   disabled: {
-    backgroundColor: Colors.orangeMuted,
+    backgroundColor: c.orangeMuted,
   },
   pressed: {
     opacity: 0.85,
   },
-});
+}));

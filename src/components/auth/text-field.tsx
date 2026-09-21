@@ -8,7 +8,6 @@ import {
 } from 'react-hook-form';
 import {
   Pressable,
-  StyleSheet,
   TextInput,
   View,
   type KeyboardTypeOptions,
@@ -16,8 +15,12 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { translateFieldError } from '@/features/auth/field-error';
+import { useLocale } from '@/contexts/locale-context';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { Text } from '@/components/ui/text';
-import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
+import { Fonts, Radius, Spacing } from '@/constants/theme';
 
 type Props<T extends FieldValues> = {
   control: Control<T>;
@@ -45,6 +48,9 @@ export function TextField<T extends FieldValues>({
   textContentType,
   containerStyle,
 }: Props<T>) {
+  const colors = useColors();
+  const styles = useStyles();
+  const { t } = useLocale();
   const [hidden, setHidden] = useState(true);
   const canToggle = Boolean(secureTextEntry);
 
@@ -63,7 +69,7 @@ export function TextField<T extends FieldValues>({
               onChangeText={onChange}
               onBlur={onBlur}
               placeholder={placeholder}
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={colors.textMuted}
               secureTextEntry={canToggle && hidden}
               keyboardType={keyboardType}
               autoCapitalize={autoCapitalize}
@@ -81,14 +87,14 @@ export function TextField<T extends FieldValues>({
                 <Ionicons
                   name={hidden ? 'eye-outline' : 'eye-off-outline'}
                   size={20}
-                  color={Colors.textMuted}
+                  color={colors.textMuted}
                 />
               </Pressable>
             ) : null}
           </View>
           {error ? (
-            <Text size={13} color="#D64545" style={styles.error}>
-              {error.message}
+            <Text size={13} color={colors.danger} style={styles.error}>
+              {translateFieldError(t, error.message)}
             </Text>
           ) : null}
         </View>
@@ -97,7 +103,7 @@ export function TextField<T extends FieldValues>({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   label: {
     marginBottom: Spacing.two,
   },
@@ -107,18 +113,18 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.white,
+    borderColor: c.border,
+    backgroundColor: c.card,
     paddingHorizontal: Spacing.four,
   },
   inputWrapError: {
-    borderColor: '#D64545',
+    borderColor: c.danger,
   },
   input: {
     flex: 1,
     fontFamily: Fonts.regular,
     fontSize: 16,
-    color: Colors.text,
+    color: c.text,
     padding: 0,
   },
   eye: {
@@ -127,4 +133,4 @@ const styles = StyleSheet.create({
   error: {
     marginTop: Spacing.one,
   },
-});
+}));

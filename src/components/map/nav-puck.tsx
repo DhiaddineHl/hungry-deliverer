@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { memo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { Marker } from 'react-native-maps';
 
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { useTracksViewChanges } from '@/components/map/use-tracks-view-changes';
-import { Colors } from '@/constants/theme';
 import type { LatLng } from '@/features/session/types';
 
 /**
@@ -19,6 +20,8 @@ export const NavPuck = memo(function NavPuck({
   coordinate: LatLng;
   heading: number;
 }) {
+  const colors = useColors();
+  const styles = useStyles();
   const tracksViewChanges = useTracksViewChanges();
 
   return (
@@ -31,20 +34,20 @@ export const NavPuck = memo(function NavPuck({
       tappable={false}
       zIndex={6}>
       <View style={styles.disc}>
-        <Ionicons name="caret-up" size={22} color={Colors.white} style={styles.arrow} />
+        <Ionicons name="caret-up" size={22} color={colors.onNavy} style={styles.arrow} />
       </View>
     </Marker>
   );
 });
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   disc: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.etaBadge,
+    backgroundColor: c.etaBadge,
     borderWidth: 3,
-    borderColor: Colors.white,
+    borderColor: c.white,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -52,4 +55,4 @@ const styles = StyleSheet.create({
     // Nudge the caret up so it reads as a direction of travel, not a centred dot.
     marginTop: -2,
   },
-});
+}));

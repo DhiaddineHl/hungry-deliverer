@@ -6,7 +6,7 @@ import { apiClient } from './client';
  *
  * Both routes act on the CALLER's account: the backend takes the Keycloak
  * user id from the token's `sub`, never from the body. Feeds
- * hungry-notification's Expo push fallback for `ORDER_ASSIGNED` — the path a
+ * the backend's Expo push fallback for `ORDER_OFFERED` — the path a
  * backgrounded or killed app relies on instead of the live STOMP subscription
  * (`services/realtime/stomp-client.ts`).
  */

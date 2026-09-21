@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import {
@@ -9,12 +8,16 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { translateFieldError } from '@/features/auth/field-error';
+import { useLocale } from '@/contexts/locale-context';
+import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { AuthBackdrop } from '@/components/auth/auth-backdrop';
 import {
   GoogleButton,
@@ -26,7 +29,7 @@ import { TextField } from '@/components/auth/text-field';
 import { VehicleClassField } from '@/components/auth/vehicle-class-field';
 import { PrimaryButton } from '@/components/ui/primary-button';
 import { Text } from '@/components/ui/text';
-import { Colors, Fonts, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Fonts, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useAuth, wasCancelled } from '@/contexts/auth-context';
 import { MOTORIZED_VEHICLES, registerSchema, type RegisterValues } from '@/features/auth/schemas';
 import { useRegisterDriver } from '@/hooks/use-driver';
@@ -42,6 +45,9 @@ const COUNTRY_CODE = '+216';
  * screen, because there is no longer one to go to.
  */
 export default function RegisterScreen() {
+  const { t } = useLocale();
+  const colors = useColors();
+  const styles = useStyles();
   const router = useRouter();
   const params = useLocalSearchParams<{ email?: string }>();
   const email = params.email ?? '';
@@ -101,7 +107,7 @@ export default function RegisterScreen() {
       router.push('/verification');
     } catch (error) {
       setAuthError(
-        error instanceof Error ? error.message : 'An unexpected error occurred. Please try again.'
+        error instanceof Error ? error.message : t('auth.errorUnexpected')
       );
     }
   };
@@ -116,7 +122,7 @@ export default function RegisterScreen() {
       // (`ensureDriverForAccount`), and the root navigator moves the session
       // on once it is there.
       if (!result.success && !wasCancelled(result.error)) {
-        setAuthError(result.error ?? 'Google sign-up failed');
+        setAuthError(result.error ?? t('auth.errorGoogleSignUp'));
       }
     } finally {
       setIsGoogleLoading(false);
@@ -132,19 +138,19 @@ export default function RegisterScreen() {
   if (!email) {
     return (
       <View style={styles.screen}>
-        <StatusBar style="light" />
+        <ThemedStatusBar surface="navy" />
         <AuthBackdrop />
         <View style={styles.cardWrap}>
           <View style={styles.emptyState}>
             <Text weight="bold" size={22} style={styles.centered}>
-              Which email?
+              {t('auth.whichEmail')}
             </Text>
-            <Text size={15} color={Colors.textSecondary} style={styles.emptyBody}>
+            <Text size={15} color={colors.textSecondary} style={styles.emptyBody}>
               We do not know which address to create the account for. Start again and we will pick
               it back up.
             </Text>
             <PrimaryButton
-              label="CONTINUE"
+              label={t('common.continue')}
               onPress={() => router.replace('/')}
               style={styles.emptyButton}
             />
@@ -156,7 +162,7 @@ export default function RegisterScreen() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar style="light" />
+      <ThemedStatusBar surface="navy" />
       <AuthBackdrop />
 
       <View style={styles.cardWrap}>
@@ -173,9 +179,9 @@ export default function RegisterScreen() {
             bounces={false}>
             <View style={styles.heading}>
               <Text weight="bold" size={24}>
-                Sign Up to Hungry
+                {t('auth.signUpTitle')}
               </Text>
-              <Text size={15} color={Colors.textSecondary} style={styles.subtitle}>
+              <Text size={15} color={colors.textSecondary} style={styles.subtitle}>
                 Just a few details and you&apos;re in
               </Text>
             </View>
@@ -184,7 +190,7 @@ export default function RegisterScreen() {
 
             {authError ? (
               <View style={styles.errorBanner}>
-                <Text size={14} color="#B3261E">
+                <Text size={14} color={colors.danger}>
                   {authError}
                 </Text>
               </View>
@@ -194,8 +200,8 @@ export default function RegisterScreen() {
               <TextField
                 control={control}
                 name="firstName"
-                label="First Name"
-                placeholder="First Name"
+                label={t('auth.firstName')}
+                placeholder={t('auth.firstName')}
                 autoCapitalize="words"
                 autoComplete="name-given"
                 containerStyle={styles.rowField}
@@ -203,8 +209,8 @@ export default function RegisterScreen() {
               <TextField
                 control={control}
                 name="lastName"
-                label="Last Name"
-                placeholder="Last Name"
+                label={t('auth.lastName')}
+                placeholder={t('auth.lastName')}
                 autoCapitalize="words"
                 autoComplete="name-family"
                 containerStyle={styles.rowField}
@@ -216,8 +222,8 @@ export default function RegisterScreen() {
             <TextField
               control={control}
               name="password"
-              label="Password"
-              placeholder="Password"
+              label={t('auth.password')}
+              placeholder={t('auth.password')}
               secureTextEntry
               autoComplete="password-new"
               textContentType="newPassword"
@@ -227,8 +233,8 @@ export default function RegisterScreen() {
             <TextField
               control={control}
               name="verifyPassword"
-              label="Verify Password"
-              placeholder="Password"
+              label={t('auth.verifyPassword')}
+              placeholder={t('auth.password')}
               secureTextEntry
               autoComplete="password-new"
               textContentType="newPassword"
@@ -242,16 +248,16 @@ export default function RegisterScreen() {
                 <TextField
                   control={control}
                   name="licensePlate"
-                  label="License Plate"
-                  placeholder="123 TUN 4567"
+                  label={t('auth.licensePlate')}
+                  placeholder={t('auth.licensePlatePlaceholder')}
                   autoCapitalize="characters"
                   containerStyle={styles.field}
                 />
                 <TextField
                   control={control}
                   name="licenseNumber"
-                  label="Driving License Number (optional)"
-                  placeholder="License number"
+                  label={t('auth.licenseNumber')}
+                  placeholder={t('auth.licenseNumberPlaceholder')}
                   autoCapitalize="characters"
                   containerStyle={styles.field}
                 />
@@ -280,6 +286,9 @@ export default function RegisterScreen() {
  * the +216 Tunisia code is fixed until multi-country support lands.
  */
 function PhoneField({ control }: { control: ReturnType<typeof useForm<RegisterValues>>['control'] }) {
+  const { t } = useLocale();
+  const colors = useColors();
+  const styles = useStyles();
   return (
     <Controller
       control={control}
@@ -287,12 +296,12 @@ function PhoneField({ control }: { control: ReturnType<typeof useForm<RegisterVa
       render={({ field: { value, onChange, onBlur }, fieldState: { error } }) => (
         <View style={styles.field}>
           <Text weight="semibold" size={15} style={styles.phoneLabel}>
-            Phone Number
+            {t('auth.phoneNumber')}
           </Text>
           <View style={styles.phoneRow}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Select country code"
+              accessibilityLabel={t('auth.selectCountryCode')}
               onPress={() => {}}
               style={styles.countryPill}>
               <View style={styles.flag}>
@@ -301,15 +310,15 @@ function PhoneField({ control }: { control: ReturnType<typeof useForm<RegisterVa
               <Text weight="medium" size={15}>
                 +216
               </Text>
-              <Ionicons name="chevron-down" size={16} color={Colors.textSecondary} />
+              <Ionicons name="chevron-down" size={16} color={colors.textSecondary} />
             </Pressable>
             <View style={[styles.numberWrap, error && styles.inputError]}>
               <TextInput
                 value={value ?? ''}
                 onChangeText={onChange}
                 onBlur={onBlur}
-                placeholder="22 222 222"
-                placeholderTextColor={Colors.textMuted}
+                placeholder={t('auth.phonePlaceholder')}
+                placeholderTextColor={colors.textMuted}
                 keyboardType="phone-pad"
                 autoComplete="tel"
                 textContentType="telephoneNumber"
@@ -318,8 +327,8 @@ function PhoneField({ control }: { control: ReturnType<typeof useForm<RegisterVa
             </View>
           </View>
           {error ? (
-            <Text size={13} color="#D64545" style={styles.phoneError}>
-              {error.message}
+            <Text size={13} color={colors.danger} style={styles.phoneError}>
+              {translateFieldError(t, error.message)}
             </Text>
           ) : null}
         </View>
@@ -328,10 +337,10 @@ function PhoneField({ control }: { control: ReturnType<typeof useForm<RegisterVa
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   screen: {
     flex: 1,
-    backgroundColor: Colors.navy,
+    backgroundColor: c.navy,
   },
   flex: {
     flex: 1,
@@ -345,7 +354,7 @@ const styles = StyleSheet.create({
     // ScrollView unbounded, so it sizes to its content and clips instead of
     // scrolling. See the login screen for the same note.
     height: '82%',
-    backgroundColor: Colors.white,
+    backgroundColor: c.card,
     borderTopLeftRadius: Radius.xl,
     borderTopRightRadius: Radius.xl,
     ...Shadow.card,
@@ -365,7 +374,7 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     marginBottom: Spacing.four,
     borderRadius: Radius.md,
-    backgroundColor: '#FDECEA',
+    backgroundColor: c.dangerSoft,
   },
   row: {
     flexDirection: 'row',
@@ -393,14 +402,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.white,
+    borderColor: c.border,
+    backgroundColor: c.card,
   },
   flag: {
     width: 26,
     height: 26,
     borderRadius: Radius.pill,
-    backgroundColor: Colors.pin,
+    backgroundColor: c.pin,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -411,18 +420,18 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.white,
+    borderColor: c.border,
+    backgroundColor: c.card,
     paddingHorizontal: Spacing.four,
   },
   numberInput: {
     fontFamily: Fonts.regular,
     fontSize: 16,
-    color: Colors.text,
+    color: c.text,
     padding: 0,
   },
   inputError: {
-    borderColor: '#D64545',
+    borderColor: c.danger,
   },
   submit: {
     marginTop: Spacing.two,
@@ -447,4 +456,4 @@ const styles = StyleSheet.create({
   emptyButton: {
     marginTop: Spacing.five,
   },
-});
+}));

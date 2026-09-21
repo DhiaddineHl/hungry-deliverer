@@ -5,6 +5,12 @@ import type { VehicleType } from '@/services/api/types';
 /**
  * Validation schemas for the auth forms. They gate the form locally; the
  * backend re-validates everything and owns the Keycloak account.
+ *
+ * Messages are catalogue KEYS rather than sentences. These schemas are built
+ * once at module load, before any language is known and long before a language
+ * change could re-run them, so a translated string baked in here would be stuck
+ * in whatever language the app started in. The field components translate the
+ * key at render instead, which is the moment the language is actually known.
  */
 
 /**
@@ -13,14 +19,14 @@ import type { VehicleType } from '@/services/api/types';
  * nothing else is asked here.
  */
 export const identificationSchema = z.object({
-  email: z.string().min(1, 'Email is required').email('Enter a valid email'),
+  email: z.string().min(1, 'validation.emailRequired').email('validation.emailInvalid'),
 });
 
 export type IdentificationValues = z.infer<typeof identificationSchema>;
 
 /** Step two for an address that already has an account. */
 export const passwordSchema = z.object({
-  password: z.string().min(1, 'Password is required'),
+  password: z.string().min(1, 'validation.passwordRequired'),
 });
 
 export type PasswordValues = z.infer<typeof passwordSchema>;
@@ -31,7 +37,7 @@ export type PasswordValues = z.infer<typeof passwordSchema>;
  * for different reasons and their copy differs.
  */
 export const forgotPasswordSchema = z.object({
-  email: z.string().min(1, 'Email is required').email('Enter a valid email'),
+  email: z.string().min(1, 'validation.emailRequired').email('validation.emailInvalid'),
 });
 
 export type ForgotPasswordValues = z.infer<typeof forgotPasswordSchema>;
@@ -44,11 +50,11 @@ export type ForgotPasswordValues = z.infer<typeof forgotPasswordSchema>;
  */
 export const newPasswordSchema = z
   .object({
-    password: z.string().min(8, 'Password must be at least 8 characters'),
-    confirmPassword: z.string().min(1, 'Please confirm your password'),
+    password: z.string().min(8, 'validation.passwordTooShort'),
+    confirmPassword: z.string().min(1, 'validation.passwordConfirm'),
   })
   .refine((values) => values.password === values.confirmPassword, {
-    message: 'Passwords do not match',
+    message: 'validation.passwordsDoNotMatch',
     path: ['confirmPassword'],
   });
 
@@ -81,30 +87,30 @@ export const MOTORIZED_VEHICLES: readonly string[] = [
  */
 export const registerSchema = z
   .object({
-    firstName: z.string().min(1, 'First name is required'),
-    lastName: z.string().min(1, 'Last name is required'),
+    firstName: z.string().min(1, 'validation.firstNameRequired'),
+    lastName: z.string().min(1, 'validation.lastNameRequired'),
     phone: z
       .string()
-      .min(1, 'Phone number is required')
-      .regex(/^[0-9\s]{6,}$/, 'Enter a valid phone number'),
-    password: z.string().min(8, 'Password must be at least 8 characters'),
-    verifyPassword: z.string().min(1, 'Please confirm your password'),
+      .min(1, 'validation.phoneRequired')
+      .regex(/^[0-9\s]{6,}$/, 'validation.phoneInvalid'),
+    password: z.string().min(8, 'validation.passwordTooShort'),
+    verifyPassword: z.string().min(1, 'validation.passwordConfirm'),
     // The class the deliverer signs up with. The backend turns it into the
     // Vehicle assigned to the new driver AND into the VEHICLE_<CLASS> realm
     // role on the Keycloak account, so it is required at registration.
     vehicleType: z.enum(REGISTRABLE_VEHICLE_TYPES, {
-      errorMap: () => ({ message: 'Choose how you deliver' }),
+      errorMap: () => ({ message: 'validation.vehicleRequired' }),
     }),
     licensePlate: z.string().optional(),
     licenseNumber: z.string().optional(),
   })
   .refine((values) => values.password === values.verifyPassword, {
-    message: 'Passwords do not match',
+    message: 'validation.passwordsDoNotMatch',
     path: ['verifyPassword'],
   })
   .refine(
     (values) => !MOTORIZED_VEHICLES.includes(values.vehicleType) || !!values.licensePlate?.trim(),
-    { message: 'License plate is required for a motorized vehicle', path: ['licensePlate'] }
+    { message: 'validation.licensePlateRequired', path: ['licensePlate'] }
   );
 
 export type RegisterValues = z.infer<typeof registerSchema>;

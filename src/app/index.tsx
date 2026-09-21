@@ -1,13 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StyleSheet,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -20,12 +18,16 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useLocale } from '@/contexts/locale-context';
+import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { AuthBackdrop } from '@/components/auth/auth-backdrop';
 import { GoogleButton, OrDivider, TermsFooter } from '@/components/auth/auth-common';
 import { TextField } from '@/components/auth/text-field';
 import { PrimaryButton } from '@/components/ui/primary-button';
 import { Text } from '@/components/ui/text';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
 import { useAuth, wasCancelled } from '@/contexts/auth-context';
 import { identificationSchema, type IdentificationValues } from '@/features/auth/schemas';
 import { lookupAccount } from '@/services/api/driver-service';
@@ -48,6 +50,9 @@ const INTRO_DURATION = 850;
  * of them is reachable only through this one.
  */
 export default function IdentificationScreen() {
+  const { t } = useLocale();
+  const colors = useColors();
+  const styles = useStyles();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
@@ -100,7 +105,7 @@ export default function IdentificationScreen() {
       });
     } catch (error) {
       setAuthError(
-        error instanceof Error ? error.message : 'We could not reach the server. Please try again.'
+        error instanceof Error ? error.message : t('auth.errorServerUnreachable')
       );
     } finally {
       setIsSubmitting(false);
@@ -117,7 +122,7 @@ export default function IdentificationScreen() {
       // realm that reports the address as unverified).
       if (!result.success && !wasCancelled(result.error)) {
         // Dismissing the browser is a choice, not a failure worth a red banner.
-        setAuthError(result.error ?? 'Google sign-in failed');
+        setAuthError(result.error ?? t('auth.errorGoogleSignIn'));
       }
     } finally {
       setIsGoogleLoading(false);
@@ -126,7 +131,7 @@ export default function IdentificationScreen() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar style="light" />
+      <ThemedStatusBar surface="navy" />
       <AuthBackdrop heroStyle={heroStyle} />
 
       <Animated.View style={[styles.cardWrap, cardStyle]}>
@@ -143,16 +148,16 @@ export default function IdentificationScreen() {
             bounces={false}>
             <View style={styles.heading}>
               <Text weight="bold" size={24}>
-                Welcome !
+                {t('auth.welcome')}
               </Text>
-              <Text size={15} color={Colors.textSecondary} style={styles.subtitle}>
-                Hungry? We got you !
+              <Text size={15} color={colors.textSecondary} style={styles.subtitle}>
+                {t('auth.welcomeSubtitle')}
               </Text>
             </View>
 
             {authError ? (
               <View style={styles.errorBanner}>
-                <Text size={14} color="#B3261E">
+                <Text size={14} color={colors.danger}>
                   {authError}
                 </Text>
               </View>
@@ -161,8 +166,8 @@ export default function IdentificationScreen() {
             <TextField
               control={control}
               name="email"
-              label="Email"
-              placeholder="Email"
+              label={t('auth.email')}
+              placeholder={t('auth.email')}
               keyboardType="email-address"
               autoComplete="email"
               textContentType="emailAddress"
@@ -170,7 +175,7 @@ export default function IdentificationScreen() {
             />
 
             <PrimaryButton
-              label={isSubmitting ? 'CHECKING…' : 'CONTINUE'}
+              label={isSubmitting ? t('common.sending') : t('common.continue')}
               onPress={handleSubmit(onSubmit)}
               disabled={isSubmitting || isGoogleLoading}
               style={styles.submit}
@@ -186,10 +191,10 @@ export default function IdentificationScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   screen: {
     flex: 1,
-    backgroundColor: Colors.navy,
+    backgroundColor: c.navy,
   },
   flex: {
     flex: 1,
@@ -204,7 +209,7 @@ const styles = StyleSheet.create({
     // scrolling. Shared with the password screen — one field either side of the
     // step, so the card must not jump height between them.
     height: '68%',
-    backgroundColor: Colors.white,
+    backgroundColor: c.card,
     borderTopLeftRadius: Radius.xl,
     borderTopRightRadius: Radius.xl,
     ...Shadow.card,
@@ -224,7 +229,7 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     marginBottom: Spacing.four,
     borderRadius: Radius.md,
-    backgroundColor: '#FDECEA',
+    backgroundColor: c.dangerSoft,
   },
   field: {
     marginBottom: Spacing.five,
@@ -232,4 +237,4 @@ const styles = StyleSheet.create({
   submit: {
     marginBottom: Spacing.four,
   },
-});
+}));

@@ -1,4 +1,4 @@
-import { Colors } from '@/constants/theme';
+import { LightColors } from '@/constants/theme';
 import { isApiError } from '@/services/api/client';
 import {
   registerDriverDevice,
@@ -19,7 +19,7 @@ import { Platform } from 'react-native';
  *
  * For a driver this is the fallback path specifically: while the app is
  * foregrounded and online, `services/realtime/stomp-client.ts`'s live STOMP
- * subscription is what actually delivers `ORDER_ASSIGNED` — see
+ * subscription is what actually delivers `ORDER_OFFERED` — see
  * `AssignmentNotificationDispatcher` on the backend, which only falls back to
  * push when no live session is open for that driver.
  */
@@ -73,7 +73,10 @@ async function ensureAndroidChannel(): Promise<void> {
     // immediately, especially with the app backgrounded.
     importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: [0, 250, 250, 250],
-    lightColor: Colors.orange,
+    // The channel's LED colour is registered with Android once, outside React,
+    // so it cannot follow the in-app theme — and it should not: it is the brand
+    // orange, which is the same in both palettes.
+    lightColor: LightColors.orange,
   });
 }
 

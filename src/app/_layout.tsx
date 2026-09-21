@@ -8,15 +8,19 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
+import { LocaleProvider } from '@/contexts/locale-context';
+import { ThemeProvider, useColors } from '@/contexts/theme-context';
 import { SessionProvider } from '@/features/session/session-context';
 import { usePushNotifications } from '@/hooks/use-push-notifications';
 import { queryClient, wireAppFocus } from '@/services/api/query-client';
+import { wireAppStateToConnection } from '@/services/realtime/stomp-client';
+import { usePasswordResetStore } from '@/store/password-reset-store';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -46,10 +50,22 @@ const AUTH_ROUTES = [
 /** The one-time-code screen, reachable with and without a session. */
 const VERIFICATION_ROUTE = 'verification';
 
+/**
+ * The three screens of a password reset. They are in AUTH_ROUTES because the
+ * usual way in is "I cannot log in" — but Settings reuses them for a signed-in
+ * deliverer changing their password on purpose, and the backend has no other
+ * way to set a password (`/drivers/password-reset/*` is the only writer). When
+ * that is what is happening, a session on these screens is expected rather than
+ * something to bounce out of.
+ */
+const PASSWORD_RESET_ROUTES = ['forgot-password', 'reset-code', 'new-password'];
+
 function RootNavigator() {
   const router = useRouter();
   const segments = useSegments();
   const { isAuthenticated, isLoading, user } = useAuth();
+  const resetOrigin = usePasswordResetStore((state) => state.origin);
+  const colors = useColors();
   usePushNotifications();
 
   useEffect(() => {
@@ -68,14 +84,21 @@ function RootNavigator() {
       // not emit reads as undefined, which deliberately gates nobody.
       if (!onVerification) router.replace('/verification');
     } else if (inAuthGroup) {
-      router.replace('/delivery');
+      // …unless the session is deliberately in the reset screens to change its
+      // own password, which is the one authenticated journey through them.
+      const changingOwnPassword =
+        resetOrigin === 'settings' && PASSWORD_RESET_ROUTES.includes(segments[0] ?? '');
+      if (!changingOwnPassword) router.replace('/delivery');
     }
-  }, [isAuthenticated, isLoading, segments, router, user]);
+  }, [isAuthenticated, isLoading, segments, router, user, resetOrigin]);
 
   return (
     <>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }}>
+      <ThemedStatusBar />
+      {/* contentStyle paints the gap a screen transition briefly exposes; left
+          to its default it is white, which flashes on every push in dark mode. */}
+      <Stack
+        screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="password" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="register" options={{ animation: 'slide_from_right' }} />
@@ -93,6 +116,13 @@ function RootNavigator() {
           name="menu"
           options={{ presentation: 'transparentModal', animation: 'fade' }}
         />
+        {/* The drawer's destinations: ordinary pushed screens, so the back
+            button on each one returns to the map with the drawer closed. */}
+        <Stack.Screen name="wallet" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="delivery-history" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="faqs" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="edit-profile" options={{ animation: 'slide_from_right' }} />
       </Stack>
     </>
   );
@@ -116,20 +146,29 @@ export default function RootLayout() {
   // stale queries refetch when the app comes back to the foreground.
   useEffect(() => wireAppFocus(), []);
 
+  // Close the STOMP connection while backgrounded, so the backend stops
+  // counting this driver as reachable live and sends a push instead — see
+  // `wireAppStateToConnection`.
+  useEffect(() => wireAppStateToConnection(), []);
+
   if (!fontsLoaded) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        {/* AuthProvider uses useQueryClient, so it nests inside the provider. */}
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <SessionProvider>
-              <RootNavigator />
-            </SessionProvider>
-          </AuthProvider>
-        </QueryClientProvider>
-      </SafeAreaProvider>
+      <ThemeProvider>
+        <LocaleProvider>
+          <SafeAreaProvider>
+            {/* AuthProvider uses useQueryClient, so it nests inside the provider. */}
+            <QueryClientProvider client={queryClient}>
+              <AuthProvider>
+                <SessionProvider>
+                  <RootNavigator />
+                </SessionProvider>
+              </AuthProvider>
+            </QueryClientProvider>
+          </SafeAreaProvider>
+        </LocaleProvider>
+      </ThemeProvider>
     </GestureHandlerRootView>
   );
 }

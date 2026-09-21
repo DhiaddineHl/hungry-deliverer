@@ -8,10 +8,12 @@ import { useEffect } from 'react';
  * `use-push-notifications.ts`, trimmed to registration only.
  *
  * No notification-tap routing here (unlike the customer app): an
- * `ORDER_ASSIGNED` tap has nowhere more specific to go than `/delivery`,
+ * `ORDER_OFFERED` tap has nowhere more specific to go than `/delivery`,
  * which the auth-gated router already lands on, and the offer itself
- * surfaces there automatically via the live STOMP subscription in
- * `session-context.tsx` once the screen is mounted.
+ * surfaces there: `session-context.tsx` asks `GET /api/offers/current` every
+ * time the app returns to the foreground while looking for orders, which is
+ * exactly what a push tap does (the live STOMP frame was sent while the
+ * socket was closed and is not replayed).
  */
 export function usePushNotifications(): void {
   const { isAuthenticated, isDriverResolved } = useAuth();

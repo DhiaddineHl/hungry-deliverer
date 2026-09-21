@@ -1,11 +1,13 @@
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
+import { makeStyles } from '@/hooks/use-themed-styles';
 import { Text } from '@/components/ui/text';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import type { OrderItem } from '@/features/session/types';
 
 /** The bordered box listing "1x Pizza au Thon" and friends. */
 export function OrderItemsList({ items }: { items: OrderItem[] }) {
+  const styles = useStyles();
   return (
     <View style={styles.box}>
       {items.map((item) => (
@@ -17,10 +19,10 @@ export function OrderItemsList({ items }: { items: OrderItem[] }) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   box: {
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: c.border,
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.three,
@@ -29,4 +31,4 @@ const styles = StyleSheet.create({
   item: {
     lineHeight: 22,
   },
-});
+}));

@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, StyleSheet, type ViewStyle } from 'react-native';
+import { Pressable, type ViewStyle } from 'react-native';
 
-import { Colors, Radius, Shadow } from '@/constants/theme';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
+import { Radius, Shadow } from '@/constants/theme';
 
 type Props = {
   name: React.ComponentProps<typeof Ionicons>['name'];
@@ -21,10 +23,16 @@ export function CircleButton({
   accessibilityLabel,
   size = 52,
   iconSize = 24,
-  background = Colors.white,
-  color = Colors.text,
+  background,
+  color,
   style,
 }: Props) {
+  const colors = useColors();
+  const styles = useStyles();
+  // Themed defaults, so the control stays a light chip on a light map and a
+  // dark one at night; an explicit prop still wins.
+  const chip = background ?? colors.card;
+  const icon = color ?? colors.text;
   return (
     <Pressable
       accessibilityRole="button"
@@ -32,16 +40,16 @@ export function CircleButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
-        { width: size, height: size, backgroundColor: background },
+        { width: size, height: size, backgroundColor: chip },
         pressed && styles.pressed,
         style,
       ]}>
-      <Ionicons name={name} size={iconSize} color={color} />
+      <Ionicons name={name} size={iconSize} color={icon} />
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   button: {
     borderRadius: Radius.pill,
     alignItems: 'center',
@@ -51,4 +59,4 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.7,
   },
-});
+}));

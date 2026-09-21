@@ -1,8 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, View } from 'react-native';
 
+import { useLocale } from '@/contexts/locale-context';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { Text } from '@/components/ui/text';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
 
 /** Navy "Navigate" pill that starts in-app turn-by-turn guidance for the leg. */
 export function NavigateButton({
@@ -12,35 +15,38 @@ export function NavigateButton({
   onPress: () => void;
   loading?: boolean;
 }) {
+  const { t } = useLocale();
+  const colors = useColors();
+  const styles = useStyles();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Navigate"
+      accessibilityLabel={t('delivery.navigate')}
       accessibilityState={{ disabled: loading }}
       disabled={loading}
       onPress={onPress}
       style={({ pressed }) => [styles.button, pressed && styles.pressed]}>
       <View style={styles.icon}>
         {loading ? (
-          <ActivityIndicator size="small" color={Colors.navy} />
+          <ActivityIndicator size="small" color={colors.navy} />
         ) : (
-          <Ionicons name="navigate" size={14} color={Colors.navy} />
+          <Ionicons name="navigate" size={14} color={colors.navy} />
         )}
       </View>
-      <Text weight="semibold" size={16} color={Colors.white}>
-        {loading ? 'Starting…' : 'Navigate'}
+      <Text weight="semibold" size={16} color={colors.onNavy}>
+        {loading ? t('delivery.starting') : t('delivery.navigate')}
       </Text>
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   button: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    backgroundColor: Colors.navy,
+    backgroundColor: c.navy,
     paddingLeft: Spacing.two,
     paddingRight: Spacing.five,
     paddingVertical: Spacing.two,
@@ -51,11 +57,11 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: Radius.pill,
-    backgroundColor: Colors.white,
+    backgroundColor: c.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
   pressed: {
     opacity: 0.85,
   },
-});
+}));

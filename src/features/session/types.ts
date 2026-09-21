@@ -20,22 +20,6 @@ export type SessionPhase =
 /** Which half of the trip is drawn on the map / highlighted in the offer card. */
 export type RouteLeg = 'store' | 'customer';
 
-export type DemandLevel = 'busy' | 'moderate' | 'quiet';
-
-export type Hotspot = {
-  id: string;
-  coordinate: LatLng;
-  level: DemandLevel;
-};
-
-export type BusyPlace = {
-  id: string;
-  name: string;
-  distanceKm: number;
-  description: string;
-  coordinate: LatLng;
-};
-
 export type OrderItem = {
   id: string;
   quantity: number;
@@ -62,23 +46,27 @@ export type Order = {
   /** Displayed as "#2043" and on the full-screen pickup code. */
   reference: string;
   /**
-   * The backend `Delivery.id` and `Order.id` this offer/session addresses —
-   * required by `respondToDelivery`/`updateDeliveryStatus`. Not shown
-   * anywhere; `reference` is what the UI displays.
+   * The backend `Order.id` this offer/session addresses, and the `Delivery.id`
+   * accepting it created — `null` while the offer is still pending, since the
+   * backend only creates the row on acceptance. `updateDeliveryStatus` needs
+   * the latter. Neither is shown anywhere; `reference` is what the UI displays.
    */
-  deliveryId: string;
   orderId: string;
-  payoutTnd: number;
+  deliveryId: string | null;
   totalTnd: number;
   durationMinutes: number;
   distanceKm: number;
   minutesToPickup: number;
   expectedArrival: string;
   arrivedAt: string;
+  /** When the offer auto-declines, epoch ms — drives the countdown on the card. */
+  expiresAt: number;
+  /** `expiresAt` minus the moment the offer was mapped — the countdown the card animates, fixed once. */
+  countdownMs: number;
   store: Store;
   customer: Customer;
   items: OrderItem[];
-  /** Precomputed polylines (a real app would call a Directions API). */
+  /** Straight lines for the pre-navigation preview; real guidance comes from the Directions API. */
   routeToStore: LatLng[];
   routeToCustomer: LatLng[];
   etaToStoreMinutes: number;
@@ -93,4 +81,6 @@ export type SessionState = {
   previewedLeg: RouteLeg;
   /** Whether the active-order sheet is expanded. */
   sheetExpanded: boolean;
+  /** An accept is in flight — the card disables its button until the backend answers. */
+  accepting: boolean;
 };

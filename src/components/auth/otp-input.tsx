@@ -1,7 +1,8 @@
 import { forwardRef, useImperativeHandle, useRef } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { TextInput, View } from 'react-native';
 
-import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { Fonts, Radius, Spacing } from '@/constants/theme';
 
 export type OtpInputHandle = {
   /** Puts the caret back in the first box — after a resend, say. */
@@ -30,6 +31,7 @@ export const OtpInput = forwardRef<OtpInputHandle, Props>(function OtpInput(
   { value, onChange, editable = true },
   ref
 ) {
+  const styles = useStyles();
   const inputRefs = useRef<(TextInput | null)[]>([]);
   const codeLength = value.length;
 
@@ -89,7 +91,7 @@ export const OtpInput = forwardRef<OtpInputHandle, Props>(function OtpInput(
   );
 });
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -101,15 +103,15 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.white,
+    borderColor: c.border,
+    backgroundColor: c.card,
     fontFamily: Fonts.semibold,
     fontSize: 22,
     textAlign: 'center',
-    color: Colors.text,
+    color: c.text,
     padding: 0,
   },
   boxFilled: {
-    borderColor: Colors.orange,
+    borderColor: c.orange,
   },
-});
+}));

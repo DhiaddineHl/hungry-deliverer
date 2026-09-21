@@ -1,6 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import {
@@ -8,16 +7,20 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useLocale } from '@/contexts/locale-context';
+import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { AuthBackdrop } from '@/components/auth/auth-backdrop';
 import { TextField } from '@/components/auth/text-field';
 import { PrimaryButton } from '@/components/ui/primary-button';
 import { Text } from '@/components/ui/text';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
+import { useAuth } from '@/contexts/auth-context';
 import { forgotPasswordSchema, type ForgotPasswordValues } from '@/features/auth/schemas';
 import { sendPasswordResetCode } from '@/services/api/driver-service';
 import { usePasswordResetStore } from '@/store/password-reset-store';
@@ -30,10 +33,14 @@ import { usePasswordResetStore } from '@/store/password-reset-store';
  * way here, or who has two accounts, should not have to walk back to fix it.
  */
 export default function ForgotPasswordScreen() {
+  const { t } = useLocale();
+  const colors = useColors();
+  const styles = useStyles();
   const router = useRouter();
   const params = useLocalSearchParams<{ email?: string }>();
   const insets = useSafeAreaInsets();
   const startReset = usePasswordResetStore((state) => state.start);
+  const { isAuthenticated } = useAuth();
   const [authError, setAuthError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -51,11 +58,15 @@ export default function ForgotPasswordScreen() {
       // an address with no account is answered on the screen that asked for
       // it — and the next screen only ever opens with a code really in flight.
       await sendPasswordResetCode(email);
-      startReset(email);
+      // A session here means this is a deliberate password change that came
+      // through Settings (the "start again" path out of the code screen lands
+      // on this form), not someone locked out. Recording that keeps the flow
+      // exempt from the root navigator's bounce and returns it to Settings.
+      startReset(email, isAuthenticated ? 'settings' : 'login');
       router.push('/reset-code');
     } catch (error) {
       setAuthError(
-        error instanceof Error ? error.message : 'We could not send the code. Please try again.'
+        error instanceof Error ? error.message : t('passwordReset.errorSend')
       );
     } finally {
       setIsSubmitting(false);
@@ -64,7 +75,7 @@ export default function ForgotPasswordScreen() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar style="light" />
+      <ThemedStatusBar surface="navy" />
       <AuthBackdrop />
 
       <View style={styles.cardWrap}>
@@ -81,16 +92,16 @@ export default function ForgotPasswordScreen() {
             bounces={false}>
             <View style={styles.heading}>
               <Text weight="bold" size={24}>
-                Forgot password?
+                {t('passwordReset.forgotTitle')}
               </Text>
-              <Text size={15} color={Colors.textSecondary} style={styles.subtitle}>
-                We&apos;ll email you a code to reset it
+              <Text size={15} color={colors.textSecondary} style={styles.subtitle}>
+                {t('passwordReset.forgotSubtitle')}
               </Text>
             </View>
 
             {authError ? (
               <View style={styles.errorBanner}>
-                <Text size={14} color="#B3261E">
+                <Text size={14} color={colors.danger}>
                   {authError}
                 </Text>
               </View>
@@ -99,8 +110,8 @@ export default function ForgotPasswordScreen() {
             <TextField
               control={control}
               name="email"
-              label="Email"
-              placeholder="Email"
+              label={t('auth.email')}
+              placeholder={t('auth.email')}
               keyboardType="email-address"
               autoComplete="email"
               textContentType="emailAddress"
@@ -108,7 +119,7 @@ export default function ForgotPasswordScreen() {
             />
 
             <PrimaryButton
-              label={isSubmitting ? 'SENDING…' : 'SEND CODE'}
+              label={isSubmitting ? t('common.sending') : t('passwordReset.sendCode')}
               onPress={handleSubmit(onSubmit)}
               disabled={isSubmitting}
               style={styles.submit}
@@ -116,11 +127,11 @@ export default function ForgotPasswordScreen() {
 
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Back to sign in"
+              accessibilityLabel={t('passwordReset.backToSignIn')}
               onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
               hitSlop={8}>
-              <Text size={14} color={Colors.textSecondary} style={styles.backLink}>
-                Remembered it? Go back
+              <Text size={14} color={colors.textSecondary} style={styles.backLink}>
+                {t('passwordReset.rememberedIt')}
               </Text>
             </Pressable>
           </ScrollView>
@@ -130,10 +141,10 @@ export default function ForgotPasswordScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   screen: {
     flex: 1,
-    backgroundColor: Colors.navy,
+    backgroundColor: c.navy,
   },
   flex: {
     flex: 1,
@@ -146,7 +157,7 @@ const styles = StyleSheet.create({
     // Same share of the screen as the identification and password cards, so
     // the backdrop above it never shifts as the deliverer moves between them.
     height: '68%',
-    backgroundColor: Colors.white,
+    backgroundColor: c.card,
     borderTopLeftRadius: Radius.xl,
     borderTopRightRadius: Radius.xl,
     ...Shadow.card,
@@ -167,7 +178,7 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     marginBottom: Spacing.four,
     borderRadius: Radius.md,
-    backgroundColor: '#FDECEA',
+    backgroundColor: c.dangerSoft,
   },
   field: {
     marginBottom: Spacing.five,
@@ -178,4 +189,4 @@ const styles = StyleSheet.create({
   backLink: {
     textAlign: 'center',
   },
-});
+}));

@@ -74,9 +74,27 @@ export function useDriverLocation({
     if (!granted) return;
 
     let cancelled = false;
+    let hasFix = false;
+
+    // The watcher can take several seconds to deliver its first position. Seed
+    // the marker from the last cached fix (instant, may be stale) and a fresh
+    // one-shot read meanwhile, so the map centres on the driver right away.
+    // `hasFix` stops either seed from overwriting a newer watcher tick.
+    const seed = (position: Location.LocationObject | null) => {
+      if (cancelled || hasFix || !position) return;
+      setLocation({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      });
+    };
+    Location.getLastKnownPositionAsync().then(seed).catch(() => {});
+    Location.getCurrentPositionAsync({ accuracy: WATCH_OPTIONS.accuracy })
+      .then(seed)
+      .catch(() => {});
 
     Location.watchPositionAsync(WATCH_OPTIONS, (position) => {
       if (cancelled) return;
+      hasFix = true;
       const next: LatLng = {
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,

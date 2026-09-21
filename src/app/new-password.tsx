@@ -1,22 +1,24 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StyleSheet,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useLocale } from '@/contexts/locale-context';
+import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { AuthBackdrop } from '@/components/auth/auth-backdrop';
 import { TextField } from '@/components/auth/text-field';
 import { PrimaryButton } from '@/components/ui/primary-button';
 import { Text } from '@/components/ui/text';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
 import { newPasswordSchema, type NewPasswordValues } from '@/features/auth/schemas';
 import { confirmPasswordReset } from '@/services/api/driver-service';
 import { usePasswordResetStore } from '@/store/password-reset-store';
@@ -31,10 +33,14 @@ import { usePasswordResetStore } from '@/store/password-reset-store';
  * logging in is left as its own deliberate act.
  */
 export default function NewPasswordScreen() {
+  const { t } = useLocale();
+  const colors = useColors();
+  const styles = useStyles();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const email = usePasswordResetStore((state) => state.email);
   const ticket = usePasswordResetStore((state) => state.ticket);
+  const origin = usePasswordResetStore((state) => state.origin);
   const clearReset = usePasswordResetStore((state) => state.clear);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,17 +57,24 @@ export default function NewPasswordScreen() {
     try {
       await confirmPasswordReset(email, ticket, values.password);
 
+      // Read before the store is emptied: it decides where this ends.
+      const startedInSettings = origin === 'settings';
+
       // Nothing of the reset outlives this line: the ticket is spent and the
       // address goes with it.
       clearReset();
       // replace, not push: the three reset screens are behind us and none of
       // them can be returned to — the ticket that made them work is gone.
-      router.replace('/');
+      //
+      // A deliverer who changed their password from Settings still holds a
+      // valid session — Keycloak's password write does not end it — so they go
+      // back to Settings rather than to the front door they never left.
+      router.replace(startedInSettings ? '/settings' : '/');
     } catch (error) {
       setAuthError(
         error instanceof Error
           ? error.message
-          : 'We could not change your password. Please try again.'
+          : t('passwordReset.errorChange')
       );
     } finally {
       setIsSubmitting(false);
@@ -73,18 +86,18 @@ export default function NewPasswordScreen() {
   if (!email || !ticket) {
     return (
       <View style={styles.screen}>
-        <StatusBar style="light" />
+        <ThemedStatusBar surface="navy" />
         <AuthBackdrop />
         <View style={styles.cardWrap}>
           <View style={styles.emptyState}>
             <Text weight="bold" size={22} style={styles.centered}>
-              Start again
+              {t('passwordReset.startAgainTitle')}
             </Text>
-            <Text size={15} color={Colors.textSecondary} style={styles.emptyBody}>
-              This reset is no longer valid. Ask for a new code and you can choose a new password.
+            <Text size={15} color={colors.textSecondary} style={styles.emptyBody}>
+              {t('passwordReset.startAgainBody')}
             </Text>
             <PrimaryButton
-              label="START AGAIN"
+              label={t('common.startAgain')}
               onPress={() => router.replace('/forgot-password')}
               style={styles.emptyButton}
             />
@@ -96,7 +109,7 @@ export default function NewPasswordScreen() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar style="light" />
+      <ThemedStatusBar surface="navy" />
       <AuthBackdrop />
 
       <View style={styles.cardWrap}>
@@ -115,7 +128,7 @@ export default function NewPasswordScreen() {
               <Text weight="bold" size={24}>
                 New password
               </Text>
-              <Text size={15} color={Colors.textSecondary} style={styles.subtitle}>
+              <Text size={15} color={colors.textSecondary} style={styles.subtitle}>
                 Choose the password you&apos;ll use from now on
               </Text>
               <Text weight="semibold" size={15} style={styles.headingEmail} numberOfLines={1}>
@@ -125,7 +138,7 @@ export default function NewPasswordScreen() {
 
             {authError ? (
               <View style={styles.errorBanner}>
-                <Text size={14} color="#B3261E">
+                <Text size={14} color={colors.danger}>
                   {authError}
                 </Text>
               </View>
@@ -134,8 +147,8 @@ export default function NewPasswordScreen() {
             <TextField
               control={control}
               name="password"
-              label="New Password"
-              placeholder="Password"
+              label={t('passwordReset.newPassword')}
+              placeholder={t('auth.password')}
               secureTextEntry
               autoComplete="password-new"
               textContentType="newPassword"
@@ -145,8 +158,8 @@ export default function NewPasswordScreen() {
             <TextField
               control={control}
               name="confirmPassword"
-              label="Verify Password"
-              placeholder="Password"
+              label={t('auth.verifyPassword')}
+              placeholder={t('auth.password')}
               secureTextEntry
               autoComplete="password-new"
               textContentType="newPassword"
@@ -166,10 +179,10 @@ export default function NewPasswordScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   screen: {
     flex: 1,
-    backgroundColor: Colors.navy,
+    backgroundColor: c.navy,
   },
   flex: {
     flex: 1,
@@ -181,7 +194,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     // Two fields and a heading — the same box as the sign-up verification card.
     height: '72%',
-    backgroundColor: Colors.white,
+    backgroundColor: c.card,
     borderTopLeftRadius: Radius.xl,
     borderTopRightRadius: Radius.xl,
     ...Shadow.card,
@@ -205,7 +218,7 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     marginBottom: Spacing.four,
     borderRadius: Radius.md,
-    backgroundColor: '#FDECEA',
+    backgroundColor: c.dangerSoft,
   },
   field: {
     marginBottom: Spacing.four,
@@ -230,4 +243,4 @@ const styles = StyleSheet.create({
   emptyButton: {
     marginTop: Spacing.five,
   },
-});
+}));

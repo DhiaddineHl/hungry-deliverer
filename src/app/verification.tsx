@@ -1,5 +1,4 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -7,17 +6,20 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useLocale } from '@/contexts/locale-context';
+import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { AuthBackdrop } from '@/components/auth/auth-backdrop';
 import { TermsFooter } from '@/components/auth/auth-common';
 import { OtpInput, type OtpInputHandle } from '@/components/auth/otp-input';
 import { PrimaryButton } from '@/components/ui/primary-button';
 import { Text } from '@/components/ui/text';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
 import { isApiError } from '@/services/api/client';
 import { confirmVerificationCode, sendVerificationCode } from '@/services/api/driver-service';
@@ -40,6 +42,9 @@ const DEFAULT_CODE_LENGTH = 6;
 const DEFAULT_RESEND_COOLDOWN = 60;
 
 export default function VerificationScreen() {
+  const { t } = useLocale();
+  const colors = useColors();
+  const styles = useStyles();
   const params = useLocalSearchParams<{ email?: string }>();
   const insets = useSafeAreaInsets();
   const { user, isAuthenticated, login, reloadUser } = useAuth();
@@ -98,10 +103,10 @@ export default function VerificationScreen() {
       setNotice(
         challenge.delivered
           ? null
-          : 'The server has no mail transport configured — the code is in its logs.'
+          : t('verification.noMailTransport')
       );
     },
-    []
+    [t]
   );
 
   const requestCode = useCallback(
@@ -111,7 +116,7 @@ export default function VerificationScreen() {
       try {
         const challenge = await sendVerificationCode(address);
         if (challenge.alreadyVerified) {
-          setNotice('This email is already verified. You can sign in.');
+          setNotice(t('verification.alreadyVerified'));
           setTimer(0);
           return;
         }
@@ -124,12 +129,12 @@ export default function VerificationScreen() {
           const retryAfter = err.data?.retryAfterSeconds;
           if (typeof retryAfter === 'number') setTimer(Math.ceil(retryAfter));
         }
-        setError(err instanceof Error ? err.message : 'Could not send the code. Please try again.');
+        setError(err instanceof Error ? err.message : t('verification.errorSend'));
       } finally {
         setIsResending(false);
       }
     },
-    [applyChallenge]
+    [applyChallenge, t]
   );
 
   // The first code, sent once per visit as soon as an address is known. The
@@ -180,7 +185,7 @@ export default function VerificationScreen() {
           // screen rather than pretend the flow can continue.
           clearPending();
           setError(
-            `${result.error ?? 'Sign-in failed'} — your email is verified, please log in to continue.`
+            `${result.error ?? t('verification.errorSignIn')} — your email is verified, please log in to continue.`
           );
           return;
         }
@@ -199,7 +204,7 @@ export default function VerificationScreen() {
         setTimer(0);
         setCode(Array(codeLength).fill(''));
       }
-      setError(err instanceof Error ? err.message : 'Could not verify the code. Please try again.');
+      setError(err instanceof Error ? err.message : t('verification.errorVerify'));
     } finally {
       setIsVerifying(false);
     }
@@ -214,8 +219,10 @@ export default function VerificationScreen() {
 
   const greeting = useMemo(
     () =>
-      pending.firstName ? `Almost there, ${pending.firstName}!` : 'We sent a code to your email',
-    [pending.firstName]
+      pending.firstName
+        ? t('verification.greeting', { name: pending.firstName })
+        : t('verification.sentCode'),
+    [pending.firstName, t]
   );
 
   // Nothing to verify — the store was cleared (app restart mid-flow) and no
@@ -223,19 +230,19 @@ export default function VerificationScreen() {
   if (!email) {
     return (
       <View style={styles.screen}>
-        <StatusBar style="light" />
+        <ThemedStatusBar surface="navy" />
         <AuthBackdrop />
         <View style={styles.cardWrap}>
           <View style={styles.emptyState}>
             <Text weight="bold" size={22} style={styles.centered}>
-              Nothing to verify
+              {t('verification.nothingToVerify')}
             </Text>
-            <Text size={15} color={Colors.textSecondary} style={styles.emptyBody}>
+            <Text size={15} color={colors.textSecondary} style={styles.emptyBody}>
               We do not know which email to confirm. Sign in and we will pick the verification back
               up.
             </Text>
             <PrimaryButton
-              label="GO TO LOGIN"
+              label={t('verification.goToLogin')}
               onPress={() => router.replace('/')}
               style={styles.emptyButton}
             />
@@ -247,7 +254,7 @@ export default function VerificationScreen() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar style="light" />
+      <ThemedStatusBar surface="navy" />
       <AuthBackdrop />
 
       <View style={styles.cardWrap}>
@@ -264,9 +271,9 @@ export default function VerificationScreen() {
             bounces={false}>
             <View style={styles.heading}>
               <Text weight="bold" size={24}>
-                Verification
+                {t('verification.title')}
               </Text>
-              <Text size={15} color={Colors.textSecondary} style={styles.subtitle}>
+              <Text size={15} color={colors.textSecondary} style={styles.subtitle}>
                 {greeting}
               </Text>
               <Text weight="semibold" size={15} style={styles.headingEmail}>
@@ -282,7 +289,7 @@ export default function VerificationScreen() {
 
             {error ? (
               <View style={styles.errorBanner}>
-                <Text size={14} color="#B3261E">
+                <Text size={14} color={colors.danger}>
                   {error}
                 </Text>
               </View>
@@ -290,7 +297,7 @@ export default function VerificationScreen() {
 
             {notice && !error ? (
               <View style={styles.noticeBanner}>
-                <Text size={14} color={Colors.navy}>
+                <Text size={14} color={colors.navy}>
                   {notice}
                 </Text>
               </View>
@@ -298,15 +305,15 @@ export default function VerificationScreen() {
 
             <View style={styles.resendRow}>
               {isResending ? (
-                <ActivityIndicator size="small" color={Colors.orange} />
+                <ActivityIndicator size="small" color={colors.orange} />
               ) : (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Resend the verification code"
+                  accessibilityLabel={t('verification.resend')}
                   onPress={handleResend}
                   disabled={timer > 0}
                   hitSlop={8}>
-                  <Text size={14} color={timer > 0 ? Colors.textMuted : Colors.orange}>
+                  <Text size={14} color={timer > 0 ? colors.textMuted : colors.orange}>
                     {timer > 0 ? `Resend in ${timer}s` : 'Resend'}
                   </Text>
                 </Pressable>
@@ -325,11 +332,11 @@ export default function VerificationScreen() {
             {!isAuthenticated ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Use a different email"
+                accessibilityLabel={t('verification.useDifferentEmail')}
                 onPress={handleChangeEmail}
                 hitSlop={8}>
-                <Text size={14} color={Colors.textSecondary} style={styles.changeEmail}>
-                  Wrong email? Start again
+                <Text size={14} color={colors.textSecondary} style={styles.changeEmail}>
+                  {t('verification.wrongEmail')}
                 </Text>
               </Pressable>
             ) : null}
@@ -342,10 +349,10 @@ export default function VerificationScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   screen: {
     flex: 1,
-    backgroundColor: Colors.navy,
+    backgroundColor: c.navy,
   },
   flex: {
     flex: 1,
@@ -359,7 +366,7 @@ const styles = StyleSheet.create({
     // ScrollView unbounded, so it sizes to its content and clips instead of
     // scrolling. Same note as the login and sign-up screens.
     height: '72%',
-    backgroundColor: Colors.white,
+    backgroundColor: c.card,
     borderTopLeftRadius: Radius.xl,
     borderTopRightRadius: Radius.xl,
     ...Shadow.card,
@@ -386,13 +393,13 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     marginBottom: Spacing.three,
     borderRadius: Radius.md,
-    backgroundColor: '#FDECEA',
+    backgroundColor: c.dangerSoft,
   },
   noticeBanner: {
     padding: Spacing.three,
     marginBottom: Spacing.three,
     borderRadius: Radius.md,
-    backgroundColor: Colors.orangeSoft,
+    backgroundColor: c.orangeSoft,
   },
   resendRow: {
     alignSelf: 'flex-end',
@@ -423,4 +430,4 @@ const styles = StyleSheet.create({
   emptyButton: {
     marginTop: Spacing.five,
   },
-});
+}));

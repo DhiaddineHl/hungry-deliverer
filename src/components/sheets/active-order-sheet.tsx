@@ -1,13 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { Pressable, View, type LayoutChangeEvent } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
+import { useLocale } from '@/contexts/locale-context';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { OrderItemsList } from '@/components/sheets/order-items-list';
 import { PrimaryButton } from '@/components/ui/primary-button';
 import { SlideToConfirm } from '@/components/ui/slide-to-confirm';
 import { Text } from '@/components/ui/text';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
 import type { Order, SessionPhase } from '@/features/session/types';
 
 type ActivePhase = Extract<
@@ -26,16 +29,16 @@ type Props = {
   onConfirmDelivery: () => void;
 };
 
-function headerLabel(order: Order, phase: ActivePhase) {
+function headerLabel(t: ReturnType<typeof useLocale>['t'], order: Order, phase: ActivePhase) {
   switch (phase) {
     case 'toStore':
-      return `${order.minutesToPickup} minutes left to pickup`;
+      return t('delivery.minutesToPickup', { count: order.minutesToPickup });
     case 'orderReady':
-      return 'Your order is ready !';
+      return t('delivery.orderReady');
     case 'toCustomer':
-      return `Expected arrival : ${order.expectedArrival}`;
+      return t('delivery.expectedArrival', { time: order.expectedArrival });
     case 'completed':
-      return `Arrived at ${order.arrivedAt} - Ahead of time`;
+      return t('delivery.arrivedAhead', { time: order.arrivedAt });
   }
 }
 
@@ -53,6 +56,9 @@ export function ActiveOrderSheet({
   onValidate,
   onConfirmDelivery,
 }: Props) {
+  const { t } = useLocale();
+  const colors = useColors();
+  const styles = useStyles();
   const [ctaWidth, setCtaWidth] = useState(0);
 
   const atStore = phase === 'toStore' || phase === 'orderReady';
@@ -69,7 +75,7 @@ export function ActiveOrderSheet({
       <View style={styles.header}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={expanded ? 'Collapse order details' : 'Expand order details'}
+          accessibilityLabel={expanded ? t('delivery.collapseOrderDetails') : t('delivery.expandOrderDetails')}
           accessibilityState={{ expanded }}
           onPress={onToggle}
           hitSlop={12}
@@ -77,21 +83,21 @@ export function ActiveOrderSheet({
           <Ionicons
             name={expanded ? 'chevron-down' : 'chevron-up'}
             size={22}
-            color={Colors.text}
+            color={colors.text}
           />
         </Pressable>
 
         <Text weight="medium" size={15} numberOfLines={1} style={styles.headerLabel}>
-          {headerLabel(order, phase)}
+          {headerLabel(t, order, phase)}
         </Text>
 
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Order details"
+          accessibilityLabel={t('delivery.orderDetails')}
           onPress={onToggle}
           hitSlop={12}
           style={styles.headerIcon}>
-          <Ionicons name="menu" size={22} color={Colors.text} />
+          <Ionicons name="menu" size={22} color={colors.text} />
         </Pressable>
       </View>
 
@@ -102,7 +108,7 @@ export function ActiveOrderSheet({
               <Text weight="bold" size={22}>
                 {contact.name}
               </Text>
-              <Text size={15} color={Colors.textSecondary} style={styles.address}>
+              <Text size={15} color={colors.textSecondary} style={styles.address}>
                 {contact.address}
               </Text>
             </View>
@@ -112,7 +118,7 @@ export function ActiveOrderSheet({
               accessibilityLabel={`Call ${contact.name}`}
               onPress={handleCall}
               style={({ pressed }) => [styles.call, pressed && styles.pressed]}>
-              <Ionicons name="call" size={22} color={Colors.white} />
+              <Ionicons name="call" size={22} color={colors.onNavy} />
             </Pressable>
           </View>
 
@@ -129,19 +135,19 @@ export function ActiveOrderSheet({
                 Order #{order.reference}
               </Text>
               {atStore ? (
-                <Ionicons name="chevron-forward" size={18} color={Colors.text} />
+                <Ionicons name="chevron-forward" size={18} color={colors.text} />
               ) : null}
             </Pressable>
 
-            <Text size={15} color={Colors.textSecondary}>
+            <Text size={15} color={colors.textSecondary}>
               Total:{' '}
-              <Text weight="bold" size={15} color={Colors.orange}>
+              <Text weight="bold" size={15} color={colors.orange}>
                 {order.totalTnd.toFixed(1)} TND
               </Text>
             </Text>
           </View>
 
-          <Text size={13} color={Colors.teal} style={styles.itemCount}>
+          <Text size={13} color={colors.teal} style={styles.itemCount}>
             {order.items.length} items
           </Text>
 
@@ -150,13 +156,13 @@ export function ActiveOrderSheet({
           <View style={styles.cta} onLayout={handleCtaLayout}>
             {atStore ? (
               <PrimaryButton
-                label="Validate Order"
+                label={t('delivery.validateOrder')}
                 onPress={onValidate}
                 disabled={phase === 'toStore'}
               />
             ) : ctaWidth > 0 ? (
               <SlideToConfirm
-                label="Confirm Delivery"
+                label={t('delivery.confirmDelivery')}
                 trackWidth={ctaWidth}
                 confirmed={phase === 'completed'}
                 onConfirm={onConfirmDelivery}
@@ -169,9 +175,9 @@ export function ActiveOrderSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   sheet: {
-    backgroundColor: Colors.card,
+    backgroundColor: c.card,
     borderRadius: Radius.xl,
     paddingHorizontal: Spacing.five,
     paddingVertical: Spacing.four,
@@ -207,13 +213,13 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: Radius.pill,
-    backgroundColor: Colors.navy,
+    backgroundColor: c.navy,
     alignItems: 'center',
     justifyContent: 'center',
   },
   divider: {
     height: 1,
-    backgroundColor: Colors.border,
+    backgroundColor: c.border,
     marginVertical: Spacing.four,
   },
   orderRow: {
@@ -236,4 +242,4 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.8,
   },
-});
+}));

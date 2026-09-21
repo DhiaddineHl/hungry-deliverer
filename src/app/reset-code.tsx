@@ -1,5 +1,4 @@
 import { router } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -7,16 +6,19 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useLocale } from '@/contexts/locale-context';
+import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { AuthBackdrop } from '@/components/auth/auth-backdrop';
 import { OtpInput, type OtpInputHandle } from '@/components/auth/otp-input';
 import { PrimaryButton } from '@/components/ui/primary-button';
 import { Text } from '@/components/ui/text';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
 import { isApiError } from '@/services/api/client';
 import { sendPasswordResetCode, verifyPasswordResetCode } from '@/services/api/driver-service';
 import { usePasswordResetStore } from '@/store/password-reset-store';
@@ -45,6 +47,9 @@ const DEFAULT_RESEND_COOLDOWN = 60;
  * ticket, and the ticket is what the last screen spends.
  */
 export default function ResetCodeScreen() {
+  const { t } = useLocale();
+  const colors = useColors();
+  const styles = useStyles();
   const insets = useSafeAreaInsets();
   const email = usePasswordResetStore((state) => state.email);
   const setTicket = usePasswordResetStore((state) => state.setTicket);
@@ -130,18 +135,18 @@ export default function ResetCodeScreen() {
   if (!email) {
     return (
       <View style={styles.screen}>
-        <StatusBar style="light" />
+        <ThemedStatusBar surface="navy" />
         <AuthBackdrop />
         <View style={styles.cardWrap}>
           <View style={styles.emptyState}>
             <Text weight="bold" size={22} style={styles.centered}>
-              Nothing to reset
+              {t('passwordReset.nothingToReset')}
             </Text>
-            <Text size={15} color={Colors.textSecondary} style={styles.emptyBody}>
-              We do not know which account to reset. Start again and we will email you a new code.
+            <Text size={15} color={colors.textSecondary} style={styles.emptyBody}>
+              {t('passwordReset.nothingToResetBody')}
             </Text>
             <PrimaryButton
-              label="START AGAIN"
+              label={t('common.startAgain')}
               onPress={() => router.replace('/forgot-password')}
               style={styles.emptyButton}
             />
@@ -153,7 +158,7 @@ export default function ResetCodeScreen() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar style="light" />
+      <ThemedStatusBar surface="navy" />
       <AuthBackdrop />
 
       <View style={styles.cardWrap}>
@@ -170,10 +175,10 @@ export default function ResetCodeScreen() {
             bounces={false}>
             <View style={styles.heading}>
               <Text weight="bold" size={24}>
-                Reset password
+                {t('passwordReset.resetTitle')}
               </Text>
-              <Text size={15} color={Colors.textSecondary} style={styles.subtitle}>
-                We sent a code to
+              <Text size={15} color={colors.textSecondary} style={styles.subtitle}>
+                {t('passwordReset.sentCodeTo')}
               </Text>
               <Text weight="semibold" size={15} style={styles.headingEmail}>
                 {email}
@@ -193,7 +198,7 @@ export default function ResetCodeScreen() {
 
             {error ? (
               <View style={styles.errorBanner}>
-                <Text size={14} color="#B3261E">
+                <Text size={14} color={colors.danger}>
                   {error}
                 </Text>
               </View>
@@ -201,7 +206,7 @@ export default function ResetCodeScreen() {
 
             {notice && !error ? (
               <View style={styles.noticeBanner}>
-                <Text size={14} color={Colors.navy}>
+                <Text size={14} color={colors.navy}>
                   {notice}
                 </Text>
               </View>
@@ -209,15 +214,15 @@ export default function ResetCodeScreen() {
 
             <View style={styles.resendRow}>
               {isResending ? (
-                <ActivityIndicator size="small" color={Colors.orange} />
+                <ActivityIndicator size="small" color={colors.orange} />
               ) : (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Resend the reset code"
+                  accessibilityLabel={t('passwordReset.resendReset')}
                   onPress={handleResend}
                   disabled={timer > 0}
                   hitSlop={8}>
-                  <Text size={14} color={timer > 0 ? Colors.textMuted : Colors.orange}>
+                  <Text size={14} color={timer > 0 ? colors.textMuted : colors.orange}>
                     {timer > 0 ? `Resend in ${timer}s` : 'Resend'}
                   </Text>
                 </Pressable>
@@ -233,11 +238,11 @@ export default function ResetCodeScreen() {
 
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Use a different email"
+              accessibilityLabel={t('verification.useDifferentEmail')}
               onPress={() => router.replace('/forgot-password')}
               hitSlop={8}>
-              <Text size={14} color={Colors.textSecondary} style={styles.changeEmail}>
-                Wrong email? Start again
+              <Text size={14} color={colors.textSecondary} style={styles.changeEmail}>
+                {t('verification.wrongEmail')}
               </Text>
             </Pressable>
           </ScrollView>
@@ -247,10 +252,10 @@ export default function ResetCodeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   screen: {
     flex: 1,
-    backgroundColor: Colors.navy,
+    backgroundColor: c.navy,
   },
   flex: {
     flex: 1,
@@ -262,7 +267,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     // Matches the sign-up verification card — same boxes, same copy depth.
     height: '72%',
-    backgroundColor: Colors.white,
+    backgroundColor: c.card,
     borderTopLeftRadius: Radius.xl,
     borderTopRightRadius: Radius.xl,
     ...Shadow.card,
@@ -289,13 +294,13 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     marginBottom: Spacing.three,
     borderRadius: Radius.md,
-    backgroundColor: '#FDECEA',
+    backgroundColor: c.dangerSoft,
   },
   noticeBanner: {
     padding: Spacing.three,
     marginBottom: Spacing.three,
     borderRadius: Radius.md,
-    backgroundColor: Colors.orangeSoft,
+    backgroundColor: c.orangeSoft,
   },
   resendRow: {
     alignSelf: 'flex-end',
@@ -326,4 +331,4 @@ const styles = StyleSheet.create({
   emptyButton: {
     marginTop: Spacing.five,
   },
-});
+}));

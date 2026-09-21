@@ -14,8 +14,11 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
+import { useLocale } from '@/contexts/locale-context';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { Text } from '@/components/ui/text';
-import { Colors, Fonts, Radius, Shadow } from '@/constants/theme';
+import { Fonts, Radius, Shadow } from '@/constants/theme';
 
 const TRACK_HEIGHT = 56;
 const KNOB_SIZE = 48;
@@ -36,6 +39,9 @@ function notifySuccess() {
 }
 
 export function SlideToConfirm({ label, onConfirm, confirmed = false, trackWidth }: Props) {
+  const { t } = useLocale();
+  const colors = useColors();
+  const styles = useStyles();
   const maxTravel = Math.max(trackWidth - KNOB_SIZE - PADDING * 2, 1);
   const offset: SharedValue<number> = useSharedValue(0);
 
@@ -70,7 +76,7 @@ export function SlideToConfirm({ label, onConfirm, confirmed = false, trackWidth
     color: interpolateColor(
       offset.value,
       [0, maxTravel * 0.6],
-      [Colors.textMuted, Colors.white],
+      [colors.textMuted, colors.onNavy],
     ),
   }));
 
@@ -89,26 +95,26 @@ export function SlideToConfirm({ label, onConfirm, confirmed = false, trackWidth
         <Animated.View
           accessibilityRole="adjustable"
           accessibilityLabel={label}
-          accessibilityHint="Slide right to confirm"
+          accessibilityHint={t('delivery.slideToConfirm')}
           style={[styles.knob, knobStyle]}>
-          <Ionicons name="arrow-forward" size={22} color={Colors.white} />
+          <Ionicons name="arrow-forward" size={22} color={colors.onNavy} />
         </Animated.View>
       </GestureDetector>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   track: {
     height: TRACK_HEIGHT,
     borderRadius: Radius.pill,
-    backgroundColor: '#E9EAEC',
+    backgroundColor: c.field,
     justifyContent: 'center',
     overflow: 'hidden',
   },
   fill: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: Colors.orange,
+    backgroundColor: c.orange,
   },
   label: {
     textAlign: 'center',
@@ -121,9 +127,9 @@ const styles = StyleSheet.create({
     width: KNOB_SIZE,
     height: KNOB_SIZE,
     borderRadius: Radius.pill,
-    backgroundColor: Colors.orange,
+    backgroundColor: c.orange,
     alignItems: 'center',
     justifyContent: 'center',
     ...Shadow.pill,
   },
-});
+}));

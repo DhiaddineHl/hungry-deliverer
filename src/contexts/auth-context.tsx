@@ -17,6 +17,7 @@ import {
 import { keycloakConfig } from '@/services/keycloak/config';
 import { clearTokens, getTokens } from '@/services/keycloak/token-storage';
 import { useDriverStore } from '@/store/driver-store';
+import { usePasswordResetStore } from '@/store/password-reset-store';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -235,6 +236,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Tokens alone are not enough: the persisted store and the query cache
     // outlive them and would leak one deliverer's data into the next session.
     useDriverStore.getState().clear();
+    // A password change started from Settings can leave a live reset ticket
+    // behind, and that must not outlive the session that created it.
+    usePasswordResetStore.getState().clear();
     queryClient.clear();
     setState({ isAuthenticated: false, isLoading: false, user: null });
     setIsDriverResolved(false);

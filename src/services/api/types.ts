@@ -121,21 +121,44 @@ export interface DriverInput {
 }
 
 /**
- * One assignment offer, as carried on hungry-notification's
- * `/topic/drivers/{driverId}/notifications` STOMP topic (`type: 'ORDER_ASSIGNED'`).
+ * One assignment offer — `delivery.hungry.delivery.application.model.DeliveryOfferOutputData`.
  *
- * This is genuinely everything the wire message carries — the assignment
- * engine's `OrderInfo`/`Assignment` records hold pickup/dropoff coordinates
- * only, no restaurant/customer name, phone, address or item list, and no
- * payout (`Order`/`OrderItem` hold no money anywhere in this backend). See
- * `features/session/order-mapper.ts` for how this maps onto the richer
- * `Order` shape the existing offer/delivery screens expect.
+ * The same shape everywhere the app meets an offer: inside the `ORDER_OFFERED`
+ * frame on `/topic/drivers/{driverId}/notifications` (as `offer`), the answer
+ * to `GET /api/offers/current`, and the answer to `POST /api/offers/{orderId}/accept`.
+ * `deliveryId` is `null` while the offer is pending and set on the accept
+ * response — the backend only creates the `Delivery` row when the driver
+ * says yes.
+ *
+ * ETAs come from the backend's routing engine (OSRM when configured), from
+ * where the driver was when matched; `distanceKm` is the straight-line total
+ * of both legs, an indication rather than a route length. There is no driver
+ * payout: nothing on the platform models one yet, so the offer card shows the
+ * order total instead.
  */
-export interface AssignmentOffer {
-  deliveryId: string;
+export interface DeliveryOffer {
   orderId: string;
-  pickup: { latitude: number; longitude: number };
-  dropoff: { latitude: number; longitude: number };
+  deliveryId: string | null;
+  restaurantName: string | null;
+  pickupAddress: string | null;
+  pickupLatitude: number;
+  pickupLongitude: number;
+  customerName: string | null;
+  dropoffAddress: string | null;
+  dropoffLatitude: number;
+  dropoffLongitude: number;
+  items: { quantity: number; name: string | null }[];
+  total: number | null;
+  currency: string | null;
+  comment: string | null;
+  etaToPickupMinutes: number;
+  etaToDropoffMinutes: number;
+  distanceKm: number;
+  /** ISO-8601 instants, informational — the countdown is driven by `expiresInMs`. */
+  offeredAt: string;
+  expiresAt: string;
+  /** Time left to answer, measured on the server when this was built — immune to clock skew. */
+  expiresInMs: number;
 }
 
 /** DriverOutputData. */

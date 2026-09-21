@@ -1,87 +1,129 @@
-import type { AssignmentOffer } from '@/services/api/types';
+import type { DeliveryOffer } from '@/services/api/types';
 import type { LatLng, Order } from './types';
 
 /**
- * Parses hungry-notification's `ORDER_ASSIGNED` STOMP frame — the exact field
- * names `AssignmentNotificationDispatcher.notifyDriver` writes — into an
- * `AssignmentOffer`, or `null` for anything else on the topic (defensive:
- * nothing currently sends another `type` on `/topic/drivers/{id}/notifications`,
- * but a wire message is never trusted blindly).
+ * What arrives on `/topic/drivers/{driverId}/notifications` — the exact
+ * `type` values `AssignmentNotificationDispatcher` writes. Anything else on
+ * the topic parses to `null` (a wire message is never trusted blindly).
  */
-export function parseOrderAssignedPayload(payload: unknown): AssignmentOffer | null {
+export type DriverNotification =
+  | { type: 'ORDER_OFFERED'; offer: DeliveryOffer }
+  | { type: 'OFFER_EXPIRED'; orderId: string };
+
+export function parseDriverNotification(payload: unknown): DriverNotification | null {
   if (typeof payload !== 'object' || payload === null) return null;
   const data = payload as Record<string, unknown>;
-  if (data.type !== 'ORDER_ASSIGNED') return null;
 
-  const { deliveryId, orderId, pickupLat, pickupLon, dropoffLat, dropoffLon } = data;
-  if (
-    typeof deliveryId !== 'string' ||
-    typeof orderId !== 'string' ||
-    typeof pickupLat !== 'number' ||
-    typeof pickupLon !== 'number' ||
-    typeof dropoffLat !== 'number' ||
-    typeof dropoffLon !== 'number'
-  ) {
-    return null;
+  if (data.type === 'ORDER_OFFERED') {
+    const offer = parseDeliveryOffer(data.offer);
+    return offer ? { type: 'ORDER_OFFERED', offer } : null;
   }
-
-  return {
-    deliveryId,
-    orderId,
-    pickup: { latitude: pickupLat, longitude: pickupLon },
-    dropoff: { latitude: dropoffLat, longitude: dropoffLon },
-  };
+  if (data.type === 'OFFER_EXPIRED' && typeof data.orderId === 'string') {
+    return { type: 'OFFER_EXPIRED', orderId: data.orderId };
+  }
+  return null;
 }
 
 /**
- * Maps a real `ORDER_ASSIGNED` offer onto the `Order` shape the existing UI
- * (`OfferCard`, `ActiveOrderSheet`, `order-number.tsx`) expects.
- *
- * Every field that isn't a coordinate or an id below is a labelled
- * placeholder, not a fabricated real value — see `AssignmentOffer`'s javadoc
- * for exactly what the backend does and doesn't send. Reshaping the UI to
- * treat restaurant/customer name, phone, items and payout as optional
- * (rather than backfilling them here) is the more correct long-term fix, but
- * a much larger one — it touches every screen that reads `Order` — so it is
- * deliberately not done in this pass. Fixing the backend gap instead
- * (denormalising restaurant/customer contact details into the Assignment
- * Queue entry, the same way push tokens already are) is the natural next
- * step, and would make this function's placeholders the only thing to
- * update.
+ * Validates the fields the session cannot do without — ids, coordinates, the
+ * deadline. Everything else is display-only and tolerated missing; the
+ * mapper below substitutes labels for it.
  */
-export function toSessionOrder(offer: AssignmentOffer, courierPosition: LatLng): Order {
+export function parseDeliveryOffer(value: unknown): DeliveryOffer | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const data = value as Record<string, unknown>;
+  if (
+    typeof data.orderId !== 'string' ||
+    typeof data.pickupLatitude !== 'number' ||
+    typeof data.pickupLongitude !== 'number' ||
+    typeof data.dropoffLatitude !== 'number' ||
+    typeof data.dropoffLongitude !== 'number' ||
+    typeof data.expiresInMs !== 'number'
+  ) {
+    return null;
+  }
+  return data as unknown as DeliveryOffer;
+}
+
+/**
+ * Maps a backend offer onto the `Order` shape the offer card, active-order
+ * sheet and pickup-code screen render.
+ *
+ * `deliveryId` follows the offer's own field: `null` for a pending offer, set
+ * once the accept response is mapped through here again (`session-context`
+ * does exactly that, so the accepted order is one mapping of the accept
+ * response rather than a patched copy of the offer). `expectedArrival` is a
+ * clock time computed from both ETAs at mapping time — good enough for the
+ * header of the sheet, which is what it feeds.
+ */
+export function toSessionOrder(offer: DeliveryOffer, courierPosition: LatLng): Order {
+  const pickup = { latitude: offer.pickupLatitude, longitude: offer.pickupLongitude };
+  const dropoff = { latitude: offer.dropoffLatitude, longitude: offer.dropoffLongitude };
+  const etaToStore = offer.etaToPickupMinutes ?? 0;
+  const etaToCustomer = offer.etaToDropoffMinutes ?? 0;
+  // Deadline in local clock terms, from the server-measured remaining time —
+  // `Date.parse(offer.expiresAt)` would silently trust the phone's clock.
+  const expiresAt = Date.now() + Math.max(0, offer.expiresInMs);
+
   return {
     reference: offer.orderId.replace(/-/g, '').slice(0, 8).toUpperCase(),
-    deliveryId: offer.deliveryId,
     orderId: offer.orderId,
-    payoutTnd: 0,
-    totalTnd: 0,
-    durationMinutes: 0,
-    distanceKm: 0,
-    minutesToPickup: 0,
-    expectedArrival: '',
+    deliveryId: offer.deliveryId ?? null,
+    totalTnd: offer.total ?? 0,
+    durationMinutes: etaToStore + etaToCustomer,
+    distanceKm: offer.distanceKm ?? 0,
+    minutesToPickup: etaToStore,
+    expectedArrival: clockTime(Date.now() + (etaToStore + etaToCustomer) * 60_000),
     arrivedAt: '',
+    expiresAt,
+    countdownMs: Math.max(1, offer.expiresInMs),
     store: {
-      name: 'Restaurant',
-      address: 'Address unavailable',
+      name: offer.restaurantName?.trim() || 'Restaurant',
+      address: offer.pickupAddress?.trim() || 'Address unavailable',
       phone: '',
-      coordinate: offer.pickup,
+      coordinate: pickup,
     },
     customer: {
-      name: 'Customer',
-      address: 'Address unavailable',
+      name: offer.customerName?.trim() || 'Customer',
+      address: offer.dropoffAddress?.trim() || 'Address unavailable',
       phone: '',
-      areaLabel: '',
-      coordinate: offer.dropoff,
+      areaLabel: areaOf(offer.dropoffAddress),
+      coordinate: dropoff,
     },
-    items: [],
+    items: (offer.items ?? []).map((item, index) => ({
+      id: `${offer.orderId}-${index}`,
+      quantity: item.quantity,
+      name: item.name?.trim() || 'Item',
+    })),
     // Straight lines, not road-following geometry — real turn-by-turn guidance
     // (`startNavigation` in delivery.tsx) calls the Google Directions API
     // separately once the driver taps Navigate. These only feed the
     // pre-navigation map preview (origin/destination + a drawn line).
-    routeToStore: [courierPosition, offer.pickup],
-    routeToCustomer: [offer.pickup, offer.dropoff],
-    etaToStoreMinutes: 0,
-    etaToCustomerMinutes: 0,
+    routeToStore: [courierPosition, pickup],
+    routeToCustomer: [pickup, dropoff],
+    etaToStoreMinutes: etaToStore,
+    etaToCustomerMinutes: etaToCustomer,
   };
+}
+
+/**
+ * The offer card only shows the customer's *area* before the driver accepts —
+ * the last comma-separated part of a formatted address is the neighbourhood /
+ * city in the formats the backend produces ("12 Rue X, Sahloul, Sousse").
+ */
+function areaOf(address: string | null | undefined): string {
+  if (!address) return 'Customer area';
+  const parts = address
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return 'Customer area';
+  return parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+}
+
+export function clockTime(epochMs: number): string {
+  const date = new Date(epochMs);
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
 }

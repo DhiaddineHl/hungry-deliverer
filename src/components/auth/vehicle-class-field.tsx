@@ -1,9 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Controller, type Control, type FieldValues, type Path } from 'react-hook-form';
-import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Pressable, View, type ViewStyle } from 'react-native';
 
+import { translateFieldError } from '@/features/auth/field-error';
+import { useLocale } from '@/contexts/locale-context';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { Text } from '@/components/ui/text';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { REGISTRABLE_VEHICLE_TYPES } from '@/features/auth/schemas';
 
 type RegistrableVehicleType = (typeof REGISTRABLE_VEHICLE_TYPES)[number];
@@ -47,6 +51,9 @@ export function VehicleClassField<T extends FieldValues>({
   label = 'How do you deliver?',
   containerStyle,
 }: Props<T>) {
+  const { t } = useLocale();
+  const colors = useColors();
+  const styles = useStyles();
   return (
     <Controller
       control={control}
@@ -71,12 +78,12 @@ export function VehicleClassField<T extends FieldValues>({
                   <Ionicons
                     name={option.icon}
                     size={22}
-                    color={selected ? Colors.orange : Colors.textSecondary}
+                    color={selected ? colors.orange : colors.textSecondary}
                   />
                   <Text
                     weight={selected ? 'semibold' : 'regular'}
                     size={13}
-                    color={selected ? Colors.text : Colors.textSecondary}>
+                    color={selected ? colors.text : colors.textSecondary}>
                     {option.label}
                   </Text>
                 </Pressable>
@@ -84,8 +91,8 @@ export function VehicleClassField<T extends FieldValues>({
             })}
           </View>
           {error ? (
-            <Text size={13} color="#D64545" style={styles.error}>
-              {error.message}
+            <Text size={13} color={colors.danger} style={styles.error}>
+              {translateFieldError(t, error.message)}
             </Text>
           ) : null}
         </View>
@@ -94,7 +101,7 @@ export function VehicleClassField<T extends FieldValues>({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   label: {
     marginBottom: Spacing.two,
   },
@@ -113,14 +120,14 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.three,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.white,
+    borderColor: c.border,
+    backgroundColor: c.card,
   },
   tileSelected: {
-    borderColor: Colors.orange,
-    backgroundColor: Colors.orangeSoft,
+    borderColor: c.orange,
+    backgroundColor: c.orangeSoft,
   },
   error: {
     marginTop: Spacing.one,
   },
-});
+}));

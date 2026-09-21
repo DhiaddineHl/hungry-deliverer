@@ -1,6 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import {
@@ -8,17 +7,20 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useLocale } from '@/contexts/locale-context';
+import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { AuthBackdrop } from '@/components/auth/auth-backdrop';
 import { IdentityRow } from '@/components/auth/auth-common';
 import { TextField } from '@/components/auth/text-field';
 import { PrimaryButton } from '@/components/ui/primary-button';
 import { Text } from '@/components/ui/text';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
 import { passwordSchema, type PasswordValues } from '@/features/auth/schemas';
 
@@ -32,6 +34,9 @@ import { passwordSchema, type PasswordValues } from '@/features/auth/schemas';
  * reaches this screen.
  */
 export default function PasswordScreen() {
+  const { t } = useLocale();
+  const colors = useColors();
+  const styles = useStyles();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ email?: string }>();
@@ -54,7 +59,7 @@ export default function PasswordScreen() {
       // /verification.
       const result = await login(email, values.password);
       if (!result.success) {
-        setAuthError(result.error ?? 'Login failed. Please try again.');
+        setAuthError(result.error ?? t('auth.errorLoginFailed'));
       }
     } finally {
       setIsSubmitting(false);
@@ -72,18 +77,18 @@ export default function PasswordScreen() {
   if (!email) {
     return (
       <View style={styles.screen}>
-        <StatusBar style="light" />
+        <ThemedStatusBar surface="navy" />
         <AuthBackdrop />
         <View style={styles.cardWrap}>
           <View style={styles.emptyState}>
             <Text weight="bold" size={22} style={styles.centered}>
-              Which account?
+              {t('auth.whichAccount')}
             </Text>
-            <Text size={15} color={Colors.textSecondary} style={styles.emptyBody}>
-              We do not know which email to sign in with. Start again and we will pick it back up.
+            <Text size={15} color={colors.textSecondary} style={styles.emptyBody}>
+              {t('auth.whichAccountBody')}
             </Text>
             <PrimaryButton
-              label="CONTINUE"
+              label={t('common.continue')}
               onPress={() => router.replace('/')}
               style={styles.emptyButton}
             />
@@ -95,7 +100,7 @@ export default function PasswordScreen() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar style="light" />
+      <ThemedStatusBar surface="navy" />
       {/* No intro here — the backdrop rests where identification left it and
           the navigator's transition provides the motion. */}
       <AuthBackdrop />
@@ -114,10 +119,10 @@ export default function PasswordScreen() {
             bounces={false}>
             <View style={styles.heading}>
               <Text weight="bold" size={24}>
-                Welcome back !
+                {t('auth.welcomeBack')}
               </Text>
-              <Text size={15} color={Colors.textSecondary} style={styles.subtitle}>
-                Enter your password to continue
+              <Text size={15} color={colors.textSecondary} style={styles.subtitle}>
+                {t('auth.passwordPrompt')}
               </Text>
             </View>
 
@@ -125,7 +130,7 @@ export default function PasswordScreen() {
 
             {authError ? (
               <View style={styles.errorBanner}>
-                <Text size={14} color="#B3261E">
+                <Text size={14} color={colors.danger}>
                   {authError}
                 </Text>
               </View>
@@ -134,8 +139,8 @@ export default function PasswordScreen() {
             <TextField
               control={control}
               name="password"
-              label="Password"
-              placeholder="Password"
+              label={t('auth.password')}
+              placeholder={t('auth.password')}
               secureTextEntry
               autoComplete="password"
               textContentType="password"
@@ -144,14 +149,14 @@ export default function PasswordScreen() {
 
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Forgot Password"
+              accessibilityLabel={t('auth.forgotPassword')}
               // The address travels along: the reset screen asks for one, and
               // it is the same one we already have.
               onPress={() => router.push({ pathname: '/forgot-password', params: { email } })}
               hitSlop={8}
               style={styles.forgot}>
-              <Text weight="semibold" size={14} color={Colors.teal}>
-                Forgot Password
+              <Text weight="semibold" size={14} color={colors.teal}>
+                {t('auth.forgotPassword')}
               </Text>
             </Pressable>
 
@@ -168,10 +173,10 @@ export default function PasswordScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   screen: {
     flex: 1,
-    backgroundColor: Colors.navy,
+    backgroundColor: c.navy,
   },
   flex: {
     flex: 1,
@@ -184,7 +189,7 @@ const styles = StyleSheet.create({
     // Matches the identification card: one field either side of the step, so
     // the card must not jump height between them.
     height: '68%',
-    backgroundColor: Colors.white,
+    backgroundColor: c.card,
     borderTopLeftRadius: Radius.xl,
     borderTopRightRadius: Radius.xl,
     ...Shadow.card,
@@ -204,7 +209,7 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     marginBottom: Spacing.four,
     borderRadius: Radius.md,
-    backgroundColor: '#FDECEA',
+    backgroundColor: c.dangerSoft,
   },
   field: {
     marginBottom: Spacing.four,
@@ -232,4 +237,4 @@ const styles = StyleSheet.create({
   emptyButton: {
     marginTop: Spacing.five,
   },
-});
+}));

@@ -13,9 +13,22 @@ import { create } from 'zustand';
  * gone and the deliverer starts again — the backend expires it on its own
  * clock anyway.
  */
+/**
+ * Where the reset was started, which decides two things the three screens
+ * cannot work out for themselves: whether a signed-in deliverer is allowed to
+ * be on them at all (the root navigator normally bounces a session out of the
+ * auth group), and where the flow returns to once the password is set.
+ *
+ * 'login' is the classic forgotten-password case — no session, ends at the
+ * front door. 'settings' is a deliberate password change by someone already
+ * signed in, and ends back in Settings with the session intact.
+ */
+export type PasswordResetOrigin = 'login' | 'settings';
+
 interface PasswordResetState {
   /** The address a code was mailed to, and the login username. */
   email: string | null;
+  origin: PasswordResetOrigin;
   /**
    * The single-use secret returned by `/drivers/password-reset/verify`, spent
    * by `/drivers/password-reset/confirm`. Null until the code has been
@@ -24,7 +37,7 @@ interface PasswordResetState {
   ticket: string | null;
 
   /** Begins a reset for an address (clears any ticket from a previous run). */
-  start: (email: string) => void;
+  start: (email: string, origin?: PasswordResetOrigin) => void;
   /** Records the ticket the accepted code bought. */
   setTicket: (ticket: string) => void;
   clear: () => void;
@@ -33,12 +46,13 @@ interface PasswordResetState {
 const EMPTY = {
   email: null,
   ticket: null,
+  origin: 'login',
 } as const;
 
 export const usePasswordResetStore = create<PasswordResetState>()((set) => ({
   ...EMPTY,
 
-  start: (email) => set({ email, ticket: null }),
+  start: (email, origin = 'login') => set({ email, origin, ticket: null }),
 
   setTicket: (ticket) => set({ ticket }),
 

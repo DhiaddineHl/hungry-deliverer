@@ -1,7 +1,6 @@
 import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -10,9 +9,12 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { AuthBackdrop } from '@/components/auth/auth-backdrop';
 import { Text } from '@/components/ui/text';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
 
 /** One full turn of the ring. Slow enough to read as branding, not a hang. */
@@ -32,6 +34,8 @@ const GIVE_UP_MS = 4000;
  * root navigator does that once `isAuthenticated` flips.
  */
 export default function AuthCallbackScreen() {
+  const colors = useColors();
+  const styles = useStyles();
   const router = useRouter();
   const { isAuthenticated, isLoading } = useAuth();
   const spin = useSharedValue(0);
@@ -63,12 +67,12 @@ export default function AuthCallbackScreen() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar style="light" />
+      <ThemedStatusBar surface="navy" />
       <AuthBackdrop />
 
       <View style={styles.center}>
         <Animated.View style={[styles.ring, spinStyle]} />
-        <Text weight="semibold" size={15} color={Colors.white} style={styles.label}>
+        <Text weight="semibold" size={15} color={colors.onNavy} style={styles.label}>
           Signing you in…
         </Text>
       </View>
@@ -76,10 +80,10 @@ export default function AuthCallbackScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   screen: {
     flex: 1,
-    backgroundColor: Colors.navy,
+    backgroundColor: c.navy,
   },
   center: {
     position: 'absolute',
@@ -97,10 +101,10 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     // Three sides in the brand orange and one transparent reads as a spinner
     // once it rotates — no image, and it inherits the theme.
-    borderColor: Colors.orange,
+    borderColor: c.orange,
     borderTopColor: 'transparent',
   },
   label: {
     marginTop: Spacing.four,
   },
-});
+}));
