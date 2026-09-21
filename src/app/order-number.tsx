@@ -1,11 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useLocale } from '@/contexts/locale-context';
+import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { Text } from '@/components/ui/text';
-import { Colors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useSession } from '@/features/session/session-context';
 
 /**
@@ -13,42 +16,45 @@ import { useSession } from '@/features/session/session-context';
  * clerk across the counter reads it the right way round.
  */
 export default function OrderNumberScreen() {
+  const { t } = useLocale();
+  const colors = useColors();
+  const styles = useStyles();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { order } = useSession();
 
   return (
     <View style={styles.screen}>
-      <StatusBar style="light" />
+      <ThemedStatusBar surface="navy" />
 
       <View style={[styles.header, { paddingTop: insets.top + Spacing.four }]}>
-        <Text weight="bold" size={16} color={Colors.white}>
-          hungry<Text weight="bold" size={16} color={Colors.orange}>.</Text>
+        <Text weight="bold" size={16} color={colors.onNavy}>
+          hungry<Text weight="bold" size={16} color={colors.orange}>.</Text>
         </Text>
       </View>
 
       <View style={styles.center}>
-        <Text weight="bold" size={110} color={Colors.white} style={styles.reference}>
+        <Text weight="bold" size={110} color={colors.onNavy} style={styles.reference}>
           #{order?.reference ?? '----'}
         </Text>
       </View>
 
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Close"
+        accessibilityLabel={t('delivery.close')}
         onPress={() => router.back()}
         hitSlop={16}
         style={[styles.close, { paddingBottom: insets.bottom + Spacing.four }]}>
-        <Ionicons name="close" size={28} color={Colors.white} />
+        <Ionicons name="close" size={28} color={colors.onNavy} />
       </Pressable>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   screen: {
     flex: 1,
-    backgroundColor: Colors.navy,
+    backgroundColor: c.navy,
   },
   header: {
     paddingHorizontal: Spacing.five,
@@ -66,4 +72,4 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     paddingHorizontal: Spacing.five,
   },
-});
+}));

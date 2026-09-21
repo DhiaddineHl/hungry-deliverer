@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "hungrydeliverer",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "com.hungry.deliverer"
@@ -19,14 +19,23 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "googleServicesFile": "./google-services.json",
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+    "extra": {
+      "eas": {
+        "projectId": "aa0dde7b-274d-4d31-9025-95ecce384900"
+      }
+    },
     "plugins": [
       "expo-router",
+      "expo-secure-store",
+      "expo-web-browser",
+      "expo-localization",
       [
         "expo-splash-screen",
         {
@@ -36,9 +45,26 @@
         }
       ],
       [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Hungry Deliverer uses your location to find orders near you and guide you to pickups and drop-offs."
+          "locationWhenInUsePermission": "Hungry Deliverer uses your location to find orders near you and guide you to pickups and drop-offs.",
+          "locationAlwaysAndWhenInUsePermission": "Hungry Deliverer uses your location to find orders near you and guide you to pickups and drop-offs."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#E8890C",
+          "defaultChannel": "orders"
         }
       ],
       [
@@ -56,6 +82,7 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "owner": "dhiaddinehlaoui"
   }
 }

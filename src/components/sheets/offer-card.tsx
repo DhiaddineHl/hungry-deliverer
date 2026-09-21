@@ -1,11 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
 
+import { useLocale } from '@/contexts/locale-context';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { PrimaryButton } from '@/components/ui/primary-button';
 import { Text } from '@/components/ui/text';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
 import type { Order, RouteLeg } from '@/features/session/types';
 
 type LegRowProps = {
@@ -16,6 +19,7 @@ type LegRowProps = {
 };
 
 function LegRow({ leg, label, selected, onSelect }: LegRowProps) {
+  const styles = useStyles();
   const handlePress = useCallback(() => onSelect(leg), [leg, onSelect]);
 
   return (
@@ -40,21 +44,29 @@ function LegRow({ leg, label, selected, onSelect }: LegRowProps) {
 type Props = {
   order: Order;
   previewedLeg: RouteLeg;
-  countdownMs: number;
+  /** An accept is in flight — the CTA is disabled until the backend answers. */
+  accepting: boolean;
   onPreviewLeg: (leg: RouteLeg) => void;
   onAccept: () => void;
   onDecline: () => void;
 };
 
-/** "Order Found" — the offer on the table, with the auto-decline countdown. */
+/**
+ * "Order Found" — the offer on the table, with the auto-decline countdown
+ * running against the deadline the backend stamped on it (`order.countdownMs`,
+ * fixed when the offer was mapped, so the sweep never restarts on a re-render).
+ */
 export function OfferCard({
   order,
   previewedLeg,
-  countdownMs,
+  accepting,
   onPreviewLeg,
   onAccept,
   onDecline,
 }: Props) {
+  const { t } = useLocale();
+  const colors = useColors();
+  const styles = useStyles();
   return (
     <Animated.View
       entering={FadeInDown.duration(280)}
@@ -62,29 +74,34 @@ export function OfferCard({
       style={styles.card}>
       <View style={styles.topRow}>
         <View style={styles.chip}>
-          <Text weight="medium" size={14} color={Colors.orange}>
-            Delivery
+          <Text weight="medium" size={14} color={colors.orange}>
+            {t('delivery.delivery')}
           </Text>
         </View>
 
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Decline order"
+          accessibilityLabel={t('delivery.declineOrder')}
           onPress={onDecline}
           style={({ pressed }) => [styles.close, pressed && styles.pressed]}>
-          <Ionicons name="close" size={20} color={Colors.orange} />
+          <Ionicons name="close" size={20} color={colors.orange} />
         </Pressable>
       </View>
 
       <Text weight="bold" size={34} style={styles.payout}>
-        {order.payoutTnd.toFixed(1)} TND
+        {order.totalTnd.toFixed(1)} TND
+      </Text>
+      <Text size={13} color={colors.textSecondary} style={styles.payoutCaption}>
+        {t('delivery.orderTotal', { count: order.items.length })}
       </Text>
 
       <View style={styles.metaRow}>
-        <Ionicons name="time-outline" size={18} color={Colors.text} />
-        <Text size={16}>
-          {order.durationMinutes} mins ({order.distanceKm} km) total
-        </Text>
+        <Ionicons name="time-outline" size={18} color={colors.text} />
+        <Text size={16}>{t('delivery.tripSummary', { minutes: order.durationMinutes, km: order.distanceKm })}</Text>
+      </View>
+      <View style={styles.metaRow}>
+        <Ionicons name="storefront-outline" size={18} color={colors.text} />
+        <Text size={16}>{t('delivery.pickupEta', { minutes: order.etaToStoreMinutes })}</Text>
       </View>
 
       <View style={styles.legs}>
@@ -106,25 +123,26 @@ export function OfferCard({
 
         {/* Sits on its own line so it never squeezes a leg's name. */}
         <View style={styles.tooltip}>
-          <Text weight="medium" size={12} color={Colors.white}>
-            Tap to see location
+          <Text weight="medium" size={12} color={colors.onNavy}>
+            {t('delivery.tapToSeeLocation')}
           </Text>
         </View>
       </View>
 
       <PrimaryButton
-        label="Accept and Go"
+        label={accepting ? t('delivery.accepting') : t('delivery.acceptAndGo')}
+        disabled={accepting}
         onPress={onAccept}
-        countdownMs={countdownMs}
+        countdownMs={order.countdownMs}
         style={styles.cta}
       />
     </Animated.View>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   card: {
-    backgroundColor: Colors.card,
+    backgroundColor: c.card,
     borderRadius: Radius.xl,
     padding: Spacing.five,
     ...Shadow.card,
@@ -135,7 +153,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   chip: {
-    backgroundColor: Colors.orangeSoft,
+    backgroundColor: c.orangeSoft,
     paddingHorizontal: Spacing.four,
     paddingVertical: 6,
     borderRadius: Radius.pill,
@@ -144,7 +162,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: Radius.pill,
-    backgroundColor: Colors.orangeSoft,
+    backgroundColor: c.orangeSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -152,11 +170,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: Spacing.four,
   },
+  payoutCaption: {
+    textAlign: 'center',
+    marginTop: 2,
+  },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    marginTop: Spacing.five,
+    marginTop: Spacing.three,
   },
   legs: {
     marginTop: Spacing.four,
@@ -172,7 +194,7 @@ const styles = StyleSheet.create({
     top: 22,
     bottom: 22,
     width: 1,
-    backgroundColor: Colors.text,
+    backgroundColor: c.text,
   },
   legRow: {
     flexDirection: 'row',
@@ -184,7 +206,7 @@ const styles = StyleSheet.create({
     width: 9,
     height: 9,
     borderRadius: 5,
-    backgroundColor: Colors.text,
+    backgroundColor: c.text,
   },
   legLabel: {
     flexShrink: 1,
@@ -193,7 +215,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     marginTop: Spacing.two,
     marginLeft: 21,
-    backgroundColor: Colors.teal,
+    backgroundColor: c.teal,
     paddingHorizontal: Spacing.three,
     paddingVertical: 5,
     borderRadius: Radius.sm,
@@ -204,4 +226,4 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.7,
   },
-});
+}));

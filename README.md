@@ -45,10 +45,28 @@ GOOGLE_MAPS_API_KEY=your_key npx expo run:ios
 The key is injected into the `react-native-maps` config plugin by `app.config.ts`. Without it the
 map tiles render blank in a native build (Expo Go on Android is unaffected).
 
+Release builds (EAS `preview` / `production`) talk to the dev backend over plain `http://`, which
+Android blocks by default outside debug builds. `expo-build-properties` in `app.json` sets
+`android.usesCleartextTraffic: true` for that reason — drop it once the backend is behind HTTPS.
+
+## Authentication
+
+Login and sign-up run against Keycloak (realm `hungry`, public client `hungry-deliverer-app`),
+and the Hungry backend keeps the Keycloak account and the `Driver` record in sync: one
+`POST /drivers` at sign-up creates both, plus the vehicle for the class the deliverer picked and
+the matching `DRIVER` + `VEHICLE_<CLASS>` realm roles. Copy `.env.example` to `.env` and point
+the two URLs at the machine running Keycloak and the backend.
+
+Setup, Keycloak configuration and the verification checklist: `docs/keycloak-deliverer-auth.md`.
+
 ## Layout
 
 ```
-src/app/                  routes: the map screen, the pickup-code modal, the side menu
+src/app/                  routes: login, sign-up, the map screen, the pickup-code modal, the side menu
+src/contexts/             AuthProvider (session restore, login, Google, logout)
+src/services/keycloak/    OIDC calls + token storage (SecureStore)
+src/services/api/         axios client, backend DTOs, driver service, React Query setup
+src/hooks/use-driver.ts   the driver record keyed by the token's `sub`
 src/features/session/     the state machine + the map-focus selector
 src/data/mock.ts          Sousse coordinates, hotspots, order #2043, route polylines
 src/components/map/       MapView, hotspot pills, ETA badge, route endpoints

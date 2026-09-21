@@ -67,3 +67,51 @@ export function locateAlong(
 
   return { position, heading: bearing(segment.start, segment.end) };
 }
+
+/**
+ * Snaps a live GPS fix onto the route: the running distance along the path of
+ * the nearest point on it, plus how far off the path the fix actually is.
+ * Equirectangular projection per segment — at delivery-trip scale (a few km)
+ * the error is centimetres, and it keeps this cheap enough to run on every
+ * position tick.
+ */
+export function projectOnto(
+  segments: Segment[],
+  point: LatLng,
+): { travelled: number; snapped: LatLng; distanceFromRoute: number } {
+  if (segments.length === 0) {
+    return { travelled: 0, snapped: point, distanceFromRoute: 0 };
+  }
+
+  const cosLat = Math.cos(toRad(point.latitude));
+  const x = (p: LatLng) => toRad(p.longitude) * cosLat * EARTH_RADIUS_M;
+  const y = (p: LatLng) => toRad(p.latitude) * EARTH_RADIUS_M;
+  const px = x(point);
+  const py = y(point);
+
+  let best = { travelled: 0, snapped: segments[0].start, distanceFromRoute: Infinity };
+  for (const segment of segments) {
+    const ax = x(segment.start);
+    const ay = y(segment.start);
+    const bx = x(segment.end);
+    const by = y(segment.end);
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lengthSq = dx * dx + dy * dy;
+    const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSq));
+    const sx = ax + dx * t;
+    const sy = ay + dy * t;
+    const distance = Math.hypot(px - sx, py - sy);
+    if (distance < best.distanceFromRoute) {
+      best = {
+        travelled: segment.cumulative + segment.length * t,
+        snapped: {
+          latitude: segment.start.latitude + (segment.end.latitude - segment.start.latitude) * t,
+          longitude: segment.start.longitude + (segment.end.longitude - segment.start.longitude) * t,
+        },
+        distanceFromRoute: distance,
+      };
+    }
+  }
+  return best;
+}

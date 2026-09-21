@@ -4,39 +4,69 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { SlideInLeft } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useLocale } from '@/contexts/locale-context';
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { Text } from '@/components/ui/text';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
+import { useAuth } from '@/contexts/auth-context';
 import { useSession } from '@/features/session/session-context';
+import { useDriver } from '@/hooks/use-driver';
+import type { TranslationKey } from '@/i18n';
 
 type Entry = {
   icon: React.ComponentProps<typeof Ionicons>['name'];
-  label: string;
+  label: TranslationKey;
+  /** Destination, or undefined for an entry with no screen behind it yet. */
+  href?: '/wallet' | '/delivery-history' | '/faqs' | '/settings';
 };
 
 const ENTRIES: Entry[] = [
-  { icon: 'wallet-outline', label: 'Earnings' },
-  { icon: 'receipt-outline', label: 'Order history' },
-  { icon: 'calendar-outline', label: 'Shifts' },
-  { icon: 'help-buoy-outline', label: 'Support' },
-  { icon: 'settings-outline', label: 'Settings' },
+  { icon: 'wallet-outline', label: 'menu.earnings', href: '/wallet' },
+  { icon: 'receipt-outline', label: 'menu.orderHistory', href: '/delivery-history' },
+  { icon: 'calendar-outline', label: 'menu.shifts' },
+  { icon: 'help-buoy-outline', label: 'menu.support', href: '/faqs' },
+  { icon: 'settings-outline', label: 'menu.settings', href: '/settings' },
 ];
 
-/** Side drawer behind the hamburger. The entries are placeholders for now. */
+/**
+ * Side drawer behind the hamburger.
+ *
+ * Entries `replace` rather than `push`: the drawer is a transparent modal over
+ * the map, so pushing would leave it sitting behind the page it opened and
+ * "back" would land on the drawer again instead of the map.
+ */
 export default function MenuScreen() {
+  const { t } = useLocale();
+  const colors = useColors();
+  const styles = useStyles();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { phase, actions } = useSession();
+  const { user, logout } = useAuth();
+  // Falls back to the token claims while the backend record loads, and stays
+  // on them for an account that has no driver record yet (social sign-in).
+  const { data: driver } = useDriver(user?.sub);
+
+  const displayName = driver?.name ?? user?.name ?? user?.preferred_username ?? t('menu.deliverer');
+  const vehicleClass = driver?.vehicle?.type;
 
   const goOffline = () => {
     actions.stopSession();
     router.back();
   };
 
+  const signOut = async () => {
+    actions.stopSession();
+    await logout();
+    router.replace('/');
+  };
+
   return (
     <View style={styles.screen}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Close menu"
+        accessibilityLabel={t('menu.closeMenu')}
         style={styles.backdrop}
         onPress={() => router.back()}
       />
@@ -46,14 +76,15 @@ export default function MenuScreen() {
         style={[styles.drawer, { paddingTop: insets.top + Spacing.five }]}>
         <View style={styles.profile}>
           <View style={styles.avatar}>
-            <Ionicons name="person" size={26} color={Colors.white} />
+            <Ionicons name="person" size={26} color={colors.onNavy} />
           </View>
-          <View>
-            <Text weight="bold" size={18}>
-              Ahmed B.
+          <View style={styles.profileText}>
+            <Text weight="bold" size={18} numberOfLines={1}>
+              {displayName}
             </Text>
-            <Text size={14} color={Colors.textSecondary}>
-              {phase === 'offline' ? 'Offline' : 'On shift'}
+            <Text size={14} color={colors.textSecondary}>
+              {phase === 'offline' ? t('menu.offline') : t('menu.onShift')}
+              {vehicleClass ? ` · ${vehicleClass.toLowerCase()}` : ''}
             </Text>
           </View>
         </View>
@@ -63,10 +94,10 @@ export default function MenuScreen() {
             <Pressable
               key={entry.label}
               accessibilityRole="button"
-              onPress={() => router.back()}
+              onPress={() => (entry.href ? router.replace(entry.href) : router.back())}
               style={({ pressed }) => [styles.entry, pressed && styles.pressed]}>
-              <Ionicons name={entry.icon} size={22} color={Colors.navy} />
-              <Text size={16}>{entry.label}</Text>
+              <Ionicons name={entry.icon} size={22} color={colors.navy} />
+              <Text size={16}>{t(entry.label)}</Text>
             </Pressable>
           ))}
         </View>
@@ -76,30 +107,40 @@ export default function MenuScreen() {
             accessibilityRole="button"
             onPress={goOffline}
             style={({ pressed }) => [styles.entry, pressed && styles.pressed]}>
-            <Ionicons name="power" size={22} color="#D64545" />
-            <Text size={16} color="#D64545">
-              Go offline
+            <Ionicons name="power" size={22} color={colors.danger} />
+            <Text size={16} color={colors.danger}>
+              {t('menu.goOffline')}
             </Text>
           </Pressable>
         ) : null}
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={signOut}
+          style={({ pressed }) => [styles.entry, pressed && styles.pressed]}>
+          <Ionicons name="log-out-outline" size={22} color={colors.danger} />
+          <Text size={16} color={colors.danger}>
+            {t('menu.logOut')}
+          </Text>
+        </Pressable>
       </Animated.View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   screen: {
     flex: 1,
     flexDirection: 'row',
   },
   backdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: Colors.scrim,
+    backgroundColor: c.scrim,
   },
   drawer: {
     width: '78%',
     maxWidth: 320,
-    backgroundColor: Colors.card,
+    backgroundColor: c.card,
     borderTopRightRadius: Radius.lg,
     borderBottomRightRadius: Radius.lg,
     paddingHorizontal: Spacing.five,
@@ -111,18 +152,21 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     paddingBottom: Spacing.five,
   },
+  profileText: {
+    flex: 1,
+  },
   avatar: {
     width: 52,
     height: 52,
     borderRadius: Radius.pill,
-    backgroundColor: Colors.navy,
+    backgroundColor: c.navy,
     alignItems: 'center',
     justifyContent: 'center',
   },
   entries: {
     flex: 1,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: c.border,
     paddingTop: Spacing.three,
   },
   entry: {
@@ -134,4 +178,4 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.6,
   },
-});
+}));

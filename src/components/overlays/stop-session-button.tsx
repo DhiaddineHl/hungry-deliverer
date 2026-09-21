@@ -1,30 +1,36 @@
-import { Pressable, StyleSheet } from 'react-native';
-import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
+import { Pressable } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
+import { useLocale } from '@/contexts/locale-context';
+import { useColors } from '@/contexts/theme-context';
+import { makeStyles } from '@/hooks/use-themed-styles';
 import { Text } from '@/components/ui/text';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
 
 /** Ends the shift — sits just under the "Finding orders" pill. */
 export function StopSessionButton({ onPress }: { onPress: () => void }) {
+  const { t } = useLocale();
+  const colors = useColors();
+  const styles = useStyles();
   return (
-    <Animated.View entering={FadeInUp.duration(220)} exiting={FadeOutUp.duration(160)}>
+    <Animated.View entering={FadeIn.duration(220)} exiting={FadeOut.duration(160)}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Stop session"
+        accessibilityLabel={t('delivery.stopSession')}
         onPress={onPress}
         style={({ pressed }) => [styles.button, pressed && styles.pressed]}>
-        <Text weight="semibold" size={16} color="#D64545">
-          Stop Session
+        <Text weight="semibold" size={16} color={colors.danger}>
+          {t('delivery.stopSession')}
         </Text>
       </Pressable>
     </Animated.View>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   button: {
     alignSelf: 'center',
-    backgroundColor: Colors.white,
+    backgroundColor: c.card,
     paddingHorizontal: Spacing.five,
     height: 44,
     justifyContent: 'center',
@@ -34,4 +40,4 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.8,
   },
-});
+}));

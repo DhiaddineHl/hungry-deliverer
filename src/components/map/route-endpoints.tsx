@@ -1,14 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { memo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { Marker } from 'react-native-maps';
 
+import { makeStyles } from '@/hooks/use-themed-styles';
+import { useColors } from '@/contexts/theme-context';
 import { useTracksViewChanges } from '@/components/map/use-tracks-view-changes';
-import { Colors } from '@/constants/theme';
 import type { LatLng } from '@/features/session/types';
 
 /** Gray puck at the start of the drawn leg. */
 export const OriginDot = memo(function OriginDot({ coordinate }: { coordinate: LatLng }) {
+  const styles = useStyles();
   const tracksViewChanges = useTracksViewChanges();
 
   return (
@@ -29,6 +31,8 @@ export const DestinationPin = memo(function DestinationPin({
 }: {
   coordinate: LatLng;
 }) {
+  const colors = useColors();
+  const styles = useStyles();
   const tracksViewChanges = useTracksViewChanges();
 
   return (
@@ -39,7 +43,7 @@ export const DestinationPin = memo(function DestinationPin({
       tappable={false}
       zIndex={4}>
       <View style={styles.destination}>
-        <Ionicons name="location" size={40} color={Colors.pin} />
+        <Ionicons name="location" size={40} color={colors.pin} />
         <View style={styles.destinationDot} />
       </View>
     </Marker>
@@ -48,6 +52,7 @@ export const DestinationPin = memo(function DestinationPin({
 
 /** The courier's own position — blue dot with an accuracy halo. */
 export const CourierPuck = memo(function CourierPuck({ coordinate }: { coordinate: LatLng }) {
+  const styles = useStyles();
   const tracksViewChanges = useTracksViewChanges();
 
   return (
@@ -64,14 +69,14 @@ export const CourierPuck = memo(function CourierPuck({ coordinate }: { coordinat
   );
 });
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   origin: {
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: Colors.origin,
+    backgroundColor: c.origin,
     borderWidth: 3,
-    borderColor: Colors.white,
+    borderColor: c.white,
   },
   destination: {
     alignItems: 'center',
@@ -82,9 +87,9 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: Colors.white,
+    backgroundColor: c.white,
     borderWidth: 2,
-    borderColor: Colors.origin,
+    borderColor: c.origin,
   },
   halo: {
     width: 56,
@@ -98,8 +103,8 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: '#1A73E8',
+    backgroundColor: c.etaBadge,
     borderWidth: 3,
-    borderColor: Colors.white,
+    borderColor: c.white,
   },
-});
+}));

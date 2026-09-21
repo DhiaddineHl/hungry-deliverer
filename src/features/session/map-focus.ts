@@ -1,8 +1,8 @@
 import type { LatLng, SessionState } from '@/features/session/types';
 
 export type MapFocus = {
-  /** Demand pills are only shown while idle / hunting. */
-  showHotspots: boolean;
+  /** The courier's own puck is only drawn while idle / hunting — a leg's origin dot takes over after. */
+  showCourier: boolean;
   route: LatLng[];
   origin: LatLng | null;
   destination: LatLng | null;
@@ -12,7 +12,7 @@ export type MapFocus = {
 };
 
 const EMPTY: MapFocus = {
-  showHotspots: true,
+  showCourier: true,
   route: [],
   origin: null,
   destination: null,
@@ -44,7 +44,7 @@ export function getMapFocus(state: SessionState): MapFocus {
   const route = showsCustomerLeg ? order.routeToCustomer : order.routeToStore;
 
   return {
-    showHotspots: false,
+    showCourier: false,
     route,
     origin: route[0] ?? null,
     destination: route[route.length - 1] ?? null,
