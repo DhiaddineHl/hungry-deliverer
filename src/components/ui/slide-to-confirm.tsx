@@ -31,6 +31,8 @@ type Props = {
   onConfirm: () => void;
   /** Renders the fulfilled state from the "Delivery complete" frame. */
   confirmed?: boolean;
+  /** Locks the knob in place and dims the track. */
+  disabled?: boolean;
   trackWidth: number;
 };
 
@@ -38,7 +40,13 @@ function notifySuccess() {
   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 }
 
-export function SlideToConfirm({ label, onConfirm, confirmed = false, trackWidth }: Props) {
+export function SlideToConfirm({
+  label,
+  onConfirm,
+  confirmed = false,
+  disabled = false,
+  trackWidth,
+}: Props) {
   const { t } = useLocale();
   const colors = useColors();
   const styles = useStyles();
@@ -50,7 +58,7 @@ export function SlideToConfirm({ label, onConfirm, confirmed = false, trackWidth
   }, [confirmed, maxTravel, offset]);
 
   const pan = Gesture.Pan()
-    .enabled(!confirmed)
+    .enabled(!confirmed && !disabled)
     .onChange((event) => {
       offset.value = Math.min(Math.max(offset.value + event.changeX, 0), maxTravel);
     })
@@ -81,7 +89,7 @@ export function SlideToConfirm({ label, onConfirm, confirmed = false, trackWidth
   }));
 
   return (
-    <View style={[styles.track, { width: trackWidth }]}>
+    <View style={[styles.track, { width: trackWidth }, disabled && styles.disabled]}>
       <Animated.View style={[styles.fill, fillStyle]} pointerEvents="none" />
 
       <Animated.Text
@@ -96,6 +104,7 @@ export function SlideToConfirm({ label, onConfirm, confirmed = false, trackWidth
           accessibilityRole="adjustable"
           accessibilityLabel={label}
           accessibilityHint={t('delivery.slideToConfirm')}
+          accessibilityState={{ disabled }}
           style={[styles.knob, knobStyle]}>
           <Ionicons name="arrow-forward" size={22} color={colors.onNavy} />
         </Animated.View>
@@ -111,6 +120,9 @@ const useStyles = makeStyles((c) => ({
     backgroundColor: c.field,
     justifyContent: 'center',
     overflow: 'hidden',
+  },
+  disabled: {
+    opacity: 0.5,
   },
   fill: {
     ...StyleSheet.absoluteFill,

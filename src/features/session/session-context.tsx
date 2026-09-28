@@ -51,6 +51,9 @@ const INITIAL_STATE: SessionState = {
 /** How close the driver has to be to the store for "Validate Order" to unlock. */
 const ARRIVAL_RADIUS_METERS = 120;
 
+/** How close the driver has to be to the customer for "Confirm Delivery" to unlock. */
+const DELIVERY_RADIUS_METERS = 200;
+
 /** How long the "Great work!" screen stays up before the driver goes looking again. */
 const COMPLETED_PAUSE_MS = 6_000;
 
@@ -141,6 +144,8 @@ type SessionContextValue = SessionState & {
   location: LatLng | null;
   /** `location`, falling back to the demo start point until the first fix. */
   courier: LatLng;
+  /** On the customer leg and within `DELIVERY_RADIUS_METERS` of the drop-off. */
+  nearCustomer: boolean;
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -174,6 +179,8 @@ const SessionContext = createContext<SessionContextValue | null>(null);
  *   - `toStore` → `orderReady`: a live proximity check (haversine distance to
  *     the store) — there is no backend signal for "the restaurant marked this
  *     ready" reaching the driver today.
+ *   - `confirmDelivery` unlocks within `DELIVERY_RADIUS_METERS` of the
+ *     customer (`nearCustomer`), not only on the exact drop-off point.
  *   - `validateOrder` / `confirmDelivery`: `POST /api/deliveries/{id}/status`
  *     (`PICKED_UP` / `DELIVERED`). Pickup is what switches the map to the
  *     customer leg.
@@ -189,6 +196,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const { granted: locationGranted, location, courier } = useDriverLocation({
     driverId,
     reportEnabled: phase !== 'offline',
+    // Accepted until delivered: the customer follows this position live.
+    tracking: phase === 'toStore' || phase === 'orderReady' || phase === 'toCustomer',
   });
   const availabilityMutation = useDriverAvailability();
 
@@ -366,8 +375,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     );
   }, [order, driverId, location]);
 
+  // No need to stand on the exact pin — anywhere within the radius counts.
+  const nearCustomer =
+    phase === 'toCustomer' &&
+    !!order &&
+    !!location &&
+    haversine(location, order.customer.coordinate) <= DELIVERY_RADIUS_METERS;
+
   const confirmDelivery = useCallback(() => {
-    if (!order?.deliveryId || !driverId) return;
+    if (!order?.deliveryId || !driverId || !nearCustomer) return;
     dispatch({ type: 'CONFIRM_DELIVERY' });
     const position = location ?? courierRef.current;
     updateDeliveryStatus(order.deliveryId, driverId, order.orderId, 'DELIVERED', position).catch(
@@ -375,7 +391,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         console.warn('[Session] Could not report delivery:', error);
       }
     );
-  }, [order, driverId, location]);
+  }, [order, driverId, location, nearCustomer]);
 
   // Back to looking, automatically, after a pause to show "Great work!" —
   // goes through the same real availability call goOnline does, since the
@@ -398,6 +414,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       locationGranted,
       location,
       courier,
+      nearCustomer,
       actions: {
         goOnline,
         stopSession,
@@ -414,6 +431,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       locationGranted,
       location,
       courier,
+      nearCustomer,
       goOnline,
       stopSession,
       previewLeg,

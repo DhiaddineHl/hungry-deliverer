@@ -46,7 +46,17 @@ export default function DeliveryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const session = useSession();
-  const { phase, order, previewedLeg, sheetExpanded, accepting, actions, location, courier } = session;
+  const {
+    phase,
+    order,
+    previewedLeg,
+    sheetExpanded,
+    accepting,
+    actions,
+    location,
+    courier,
+    nearCustomer,
+  } = session;
 
   const mapRef = useRef<DeliveryMapHandle>(null);
   const [bottomInset, setBottomInset] = useState(0);
@@ -157,18 +167,19 @@ export default function DeliveryScreen() {
 
   // Arrival ends navigation mode so the sheet — "Validate Order" at the
   // restaurant, "Confirm Delivery" at the customer — is what the driver sees
-  // next. The session's own proximity check (`orderReady`) fires a little
-  // earlier than the route's last metres; either one closes the HUD.
+  // next. The session's own proximity checks (`orderReady` at the store,
+  // `nearCustomer` at the drop-off) fire earlier than the route's last metres;
+  // any of them closes the HUD.
   const arrived = navigating && guidance?.arrived === true;
   useEffect(() => {
-    if (!arrived && phase !== 'orderReady') return;
+    if (!arrived && phase !== 'orderReady' && !nearCustomer) return;
     if (!navigating) return;
     const timer = setTimeout(() => {
       setNavRoute(null);
       actions.setSheetExpanded(true);
     }, arrived ? 1_500 : 0);
     return () => clearTimeout(timer);
-  }, [arrived, phase, navigating, actions]);
+  }, [arrived, phase, nearCustomer, navigating, actions]);
 
   const toggleMapType = useCallback(() => {
     setMapType((current) => (current === 'standard' ? 'hybrid' : 'standard'));
@@ -295,6 +306,7 @@ export default function DeliveryScreen() {
               onCall={openDialer}
               onOpenOrderNumber={openOrderNumber}
               onValidate={actions.validateOrder}
+              canConfirmDelivery={nearCustomer}
               onConfirmDelivery={actions.confirmDelivery}
             />
           </View>

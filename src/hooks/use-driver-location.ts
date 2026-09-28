@@ -20,10 +20,23 @@ import { reportDriverLocation } from '@/services/api/driver-location-service';
  * is no reason to spend battery/network telling the backend about a driver
  * who isn't dispatchable.
  *
+ * During a delivery (`tracking`) the same pings also drive the customer's
+ * live map (the backend's `LiveDeliveryTrackingService`), which needs more
+ * than a dispatch registry does:
+ *   - a tighter watch — finer accuracy, no 20 m movement threshold, so the
+ *     marker moves smoothly and a driver standing still still produces fixes;
+ *   - one report the moment tracking starts, so the customer's map has a
+ *     position right after the accept rather than after the first 20 m;
+ *   - the last position re-sent every `TRACKING_HEARTBEAT_MS`. The backend
+ *     forgets a delivery's position after ~2 min without a ping (so a dead
+ *     phone never looks live); a driver waiting at the restaurant for the food
+ *     must not look like one.
+ *
  * Foreground-only for this pass — background location (`expo-task-manager`)
  * would keep reporting with the app backgrounded, which a real fleet app
  * needs eventually but is a genuinely separate, larger change (a background
  * task, a persistent notification on Android, different permission prompts).
+ * See `hungry-customer/docs/plans/live-driver-tracking-plan.md` §3.6.
  */
 
 const WATCH_OPTIONS: Location.LocationOptions = {
@@ -32,10 +45,26 @@ const WATCH_OPTIONS: Location.LocationOptions = {
   distanceInterval: 20,
 };
 
+/** While a delivery is being tracked by its customer. */
+const TRACKING_WATCH_OPTIONS: Location.LocationOptions = {
+  accuracy: Location.Accuracy.High,
+  timeInterval: 4_000,
+  distanceInterval: 0,
+};
+
+/** Well inside the backend's ~2 min expiry of a delivery's last position. */
+const TRACKING_HEARTBEAT_MS = 30_000;
+
 export interface UseDriverLocationOptions {
   driverId: string | null | undefined;
   /** Only report to the backend while true (see the module doc above). */
   reportEnabled: boolean;
+  /**
+   * A delivery is in progress (accepted, not yet delivered): its customer is
+   * watching this position live. Tightens the watch and keeps the position
+   * fresh — see the module doc. Only takes effect with `reportEnabled`.
+   */
+  tracking?: boolean;
 }
 
 export interface UseDriverLocationResult {
@@ -46,13 +75,26 @@ export interface UseDriverLocationResult {
   courier: LatLng;
 }
 
+function report(driverId: string, position: LatLng) {
+  reportDriverLocation(driverId, position.latitude, position.longitude).catch((error) => {
+    console.warn('[Location] Could not report position:', error);
+  });
+}
+
 export function useDriverLocation({
   driverId,
   reportEnabled,
+  tracking = false,
 }: UseDriverLocationOptions): UseDriverLocationResult {
   const [granted, setGranted] = useState(false);
   const [location, setLocation] = useState<LatLng | null>(null);
   const subscriptionRef = useRef<Location.LocationSubscription | null>(null);
+  const locationRef = useRef<LatLng | null>(null);
+  useEffect(() => {
+    locationRef.current = location;
+  }, [location]);
+
+  const trackingActive = tracking && reportEnabled && !!driverId;
 
   useEffect(() => {
     let cancelled = false;
@@ -88,11 +130,12 @@ export function useDriverLocation({
       });
     };
     Location.getLastKnownPositionAsync().then(seed).catch(() => {});
-    Location.getCurrentPositionAsync({ accuracy: WATCH_OPTIONS.accuracy })
+    const watchOptions = trackingActive ? TRACKING_WATCH_OPTIONS : WATCH_OPTIONS;
+    Location.getCurrentPositionAsync({ accuracy: watchOptions.accuracy })
       .then(seed)
       .catch(() => {});
 
-    Location.watchPositionAsync(WATCH_OPTIONS, (position) => {
+    Location.watchPositionAsync(watchOptions, (position) => {
       if (cancelled) return;
       hasFix = true;
       const next: LatLng = {
@@ -102,9 +145,7 @@ export function useDriverLocation({
       setLocation(next);
 
       if (reportEnabled && driverId) {
-        reportDriverLocation(driverId, next.latitude, next.longitude).catch((error) => {
-          console.warn('[Location] Could not report position:', error);
-        });
+        report(driverId, next);
       }
     })
       .then((subscription) => {
@@ -123,7 +164,22 @@ export function useDriverLocation({
       subscriptionRef.current?.remove();
       subscriptionRef.current = null;
     };
-  }, [granted, reportEnabled, driverId]);
+  }, [granted, reportEnabled, driverId, trackingActive]);
+
+  // While tracked: report once right away (the watcher may take a while to
+  // fire, and not at all for a driver standing still), then keep re-sending
+  // the latest position so it never expires on the backend mid-delivery.
+  useEffect(() => {
+    if (!trackingActive || !driverId) return;
+
+    const sendLatest = () => {
+      const latest = locationRef.current;
+      if (latest) report(driverId, latest);
+    };
+    sendLatest();
+    const timer = setInterval(sendLatest, TRACKING_HEARTBEAT_MS);
+    return () => clearInterval(timer);
+  }, [trackingActive, driverId]);
 
   return { granted, location, courier: location ?? COURIER_START };
 }

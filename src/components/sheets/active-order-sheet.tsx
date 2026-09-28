@@ -26,6 +26,8 @@ type Props = {
   onCall: (phone: string) => void;
   onOpenOrderNumber: () => void;
   onValidate: () => void;
+  /** Within delivery range of the customer — gates the confirm slider. */
+  canConfirmDelivery: boolean;
   onConfirmDelivery: () => void;
 };
 
@@ -54,6 +56,7 @@ export function ActiveOrderSheet({
   onCall,
   onOpenOrderNumber,
   onValidate,
+  canConfirmDelivery,
   onConfirmDelivery,
 }: Props) {
   const { t } = useLocale();
@@ -165,6 +168,7 @@ export function ActiveOrderSheet({
                 label={t('delivery.confirmDelivery')}
                 trackWidth={ctaWidth}
                 confirmed={phase === 'completed'}
+                disabled={phase === 'toCustomer' && !canConfirmDelivery}
                 onConfirm={onConfirmDelivery}
               />
             ) : null}
