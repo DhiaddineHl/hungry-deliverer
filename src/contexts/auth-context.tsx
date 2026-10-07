@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import * as AuthSession from 'expo-auth-session';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
-import { ensureDriverForAccount } from '@/hooks/use-driver';
+import { loadDriverForAccount } from '@/hooks/use-driver';
 import { clearPushRegistration } from '@/services/notifications/push-service';
 import {
   exchangeAuthorizationCode,
@@ -28,18 +28,15 @@ interface AuthState {
 interface AuthContextValue extends AuthState {
   /**
    * Whether the driver record behind the current session has been resolved —
-   * read from the backend, or created for an account the app never registered
-   * (see `ensureDriverForAccount`). A Google sign-in always lands here with no
-   * record yet, so screens that read the profile can wait on this instead of
-   * rendering an empty one.
+   * read from the backend (see `loadDriverForAccount`) — so screens that read
+   * the profile can wait on this instead of rendering an empty one.
    *
    * `true` with no record simply means the lookup finished and there is none.
    */
   isDriverResolved: boolean;
   login: (email: string, password: string) => Promise<AuthResult>;
-  // Registration deliberately lives outside this context: it is a backend
-  // mutation (useRegisterDriver), because the backend — not the app — holds
-  // the credentials that can create a Keycloak account.
+  // There is no registration here: a deliverer applies (driver-request-service)
+  // and the account only exists once staff approve the application.
   loginWithGoogle: () => Promise<AuthResult>;
   /**
    * Re-fetches the user info from Keycloak after a profile change (done via
@@ -57,6 +54,12 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function wasCancelled(error?: string): boolean {
   return !!error && error.toLowerCase().includes('cancel');
 }
+
+/**
+ * A Google account with no approved deliverer behind it. Exported so the
+ * identification screen can recognise it and show its translated copy.
+ */
+export const NO_DELIVERER_ACCOUNT = 'NO_DELIVERER_ACCOUNT';
 
 // Discovery for the browser-based Authorization Code + PKCE flow.
 const discovery: AuthSession.DiscoveryDocument = {
@@ -108,10 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   // Warm the driver record into the query cache as soon as we have an account
-  // id, so every screen that reads the profile already has it — creating the
-  // record first when the account has none, which is the normal state of a
-  // Google sign-in (Keycloak provisions those accounts itself, so nothing ever
-  // registered them with the backend).
+  // id, so every screen that reads the profile already has it.
   //
   // Fire-and-forget on purpose: the session is already valid, so a backend
   // hiccup here must not lock the deliverer out of the app. Screens that need
@@ -123,7 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       setIsDriverResolved(false);
-      ensureDriverForAccount(queryClient, sub)
+      loadDriverForAccount(queryClient, sub)
         .catch((error) => {
           console.warn('[Auth] Could not resolve the driver record:', error);
         })
@@ -152,6 +152,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           );
           if (tokenResult.success) {
             const userInfo = await fetchUserInfo();
+            // Keycloak happily brokers ANY Google account into the realm, so a
+            // valid token proves nothing about being a deliverer. Only an
+            // approved application creates a Driver row; an account without
+            // one is signed straight back out rather than let in.
+            const driver = userInfo?.sub
+              ? await loadDriverForAccount(queryClient, userInfo.sub).catch(() => undefined)
+              : null;
+            if (driver === null) {
+              await keycloakLogout();
+              queryClient.clear();
+              return { success: false, error: NO_DELIVERER_ACCOUNT };
+            }
             setState({ isAuthenticated: true, isLoading: false, user: userInfo });
             ensureDriver(userInfo?.sub);
           }
@@ -165,7 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: false, error: 'Authentication failed. Please try again.' };
       }
     },
-    [redirectUri, ensureDriver]
+    [redirectUri, ensureDriver, queryClient]
   );
 
   useEffect(() => {

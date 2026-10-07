@@ -10,8 +10,14 @@ import { reportDriverLocation } from '@/services/api/driver-location-service';
  * which fetched one fix and then discarded it (the map puck was always the
  * hardcoded `COURIER_START` mock).
  *
- * Watching starts as soon as foreground permission is granted, independent of
- * `reportEnabled`: `session-context.tsx`'s "go online" action needs a current
+ * Nothing happens until `enabled`: no permission prompt and no GPS on the
+ * sign-in screens. The provider that owns this hook wraps the whole app, so
+ * without the gate the prompt fired on every app open, before anyone had
+ * logged in. It is enabled once a deliverer is signed in AND the map screen is
+ * open, and turning it back off (sign-out) stops the watch.
+ *
+ * Once enabled, watching starts as soon as foreground permission is granted,
+ * independent of `reportEnabled`: `session-context.tsx`'s "go online" action needs a current
  * position to send WITH the availability call (`PUT /drivers/me/availability`
  * requires one — see that endpoint's javadoc), so a position has to exist
  * before the driver ever goes online, not just after. Reporting to the
@@ -56,6 +62,8 @@ const TRACKING_WATCH_OPTIONS: Location.LocationOptions = {
 const TRACKING_HEARTBEAT_MS = 30_000;
 
 export interface UseDriverLocationOptions {
+  /** Master switch — see the module doc. While false, nothing is requested or watched. */
+  enabled: boolean;
   driverId: string | null | undefined;
   /** Only report to the backend while true (see the module doc above). */
   reportEnabled: boolean;
@@ -82,6 +90,7 @@ function report(driverId: string, position: LatLng) {
 }
 
 export function useDriverLocation({
+  enabled,
   driverId,
   reportEnabled,
   tracking = false,
@@ -94,9 +103,10 @@ export function useDriverLocation({
     locationRef.current = location;
   }, [location]);
 
-  const trackingActive = tracking && reportEnabled && !!driverId;
+  const trackingActive = enabled && tracking && reportEnabled && !!driverId;
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
 
     (async () => {
@@ -110,10 +120,10 @@ export function useDriverLocation({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
-    if (!granted) return;
+    if (!enabled || !granted) return;
 
     let cancelled = false;
     let hasFix = false;
@@ -164,7 +174,7 @@ export function useDriverLocation({
       subscriptionRef.current?.remove();
       subscriptionRef.current = null;
     };
-  }, [granted, reportEnabled, driverId, trackingActive]);
+  }, [enabled, granted, reportEnabled, driverId, trackingActive]);
 
   // While tracked: report once right away (the watcher may take a while to
   // fire, and not at all for a driver standing still), then keep re-sending

@@ -59,6 +59,8 @@ export const fr: TranslationCatalog = {
     errorGoogleSignUp: 'L’inscription Google a échoué',
     errorLoginFailed: 'La connexion a échoué. Veuillez réessayer.',
     errorUnexpected: 'Une erreur inattendue est survenue. Veuillez réessayer.',
+    errorNoDelivererAccount:
+      'Aucun compte livreur approuvé n’est associé à cette adresse Google. Saisissez votre e-mail ci-dessus pour postuler.',
   },
 
   verification: {
@@ -101,8 +103,52 @@ export const fr: TranslationCatalog = {
     changeEmail: 'Modifier l’adresse e-mail',
     errorSend: 'Impossible d’envoyer le code. Veuillez réessayer.',
     errorChange: 'Impossible de modifier votre mot de passe. Veuillez réessayer.',
+    activateTitle: 'Définir votre mot de passe',
+    activateSubtitle: 'Choisissez le mot de passe qui vous servira à vous connecter et à livrer',
   },
 
+  application: {
+    title: 'Devenir livreur',
+    subtitle:
+      'Parlez-nous de vous et de votre véhicule. Notre équipe examine chaque candidature.',
+    reapplyTitle: 'Postuler à nouveau',
+    previousRejected: 'Votre précédente candidature n’a pas été retenue.',
+    rejectionReason: 'Motif : %{reason}',
+    aboutYou: 'Vous',
+    vehicle: 'Votre véhicule',
+    documents: 'Documents',
+    documentsHint: 'Des photos nettes et bien éclairées, avec les quatre coins visibles.',
+    livePhoto: 'Photo en direct',
+    livePhotoHint: 'Un selfie pris maintenant avec votre appareil photo',
+    idCardFront: 'Carte d’identité — recto',
+    idCardBack: 'Carte d’identité — verso',
+    vehicleRegistration: 'Carte grise du véhicule',
+    optional: 'Facultatif',
+    takePhoto: 'Prendre une photo',
+    choosePhoto: 'Choisir une photo',
+    replace: 'Remplacer',
+    cameraDenied:
+      'L’accès à l’appareil photo est nécessaire. Vous pouvez l’autoriser dans les réglages du téléphone.',
+    libraryDenied:
+      'L’accès aux photos est nécessaire. Vous pouvez l’autoriser dans les réglages du téléphone.',
+    submit: 'ENVOYER MA CANDIDATURE',
+    submitting: 'ENVOI…',
+    uploading: 'ENVOI DES DOCUMENTS (%{done}/%{total})…',
+    uploadFailed:
+      'Votre candidature est enregistrée, mais un document n’a pas pu être envoyé (%{error}). Appuyez sur Envoyer pour réessayer.',
+    pendingTitle: 'Candidature en cours d’examen',
+    pendingBody:
+      'Merci pour votre candidature ! Notre équipe l’examine et écrira à %{email} dès qu’une décision sera prise.',
+    pendingNextSteps:
+      'Une fois approuvé, revenez, saisissez cet e-mail et définissez votre mot de passe pour commencer à livrer.',
+    checkStatus: 'VÉRIFIER LE STATUT',
+    stillPending: 'Toujours en cours d’examen — nous vous écrirons dès qu’il y aura du nouveau.',
+    useAnotherEmail: 'Utiliser un autre e-mail',
+    receivedTitle: 'Candidature reçue',
+    receivedBody:
+      'Merci ! Notre équipe va examiner votre candidature. Vous serez informé par e-mail à %{email} ou par appel téléphonique dès qu’elle sera acceptée.',
+    backToStart: 'RETOUR À LA CONNEXION',
+  },
   menu: {
     deliverer: 'Livreur',
     offline: 'Hors ligne',
@@ -320,5 +366,6 @@ export const fr: TranslationCatalog = {
     phoneInvalid: 'Saisissez un numéro de téléphone valide',
     vehicleRequired: 'Choisissez votre moyen de livraison',
     licensePlateRequired: 'La plaque d’immatriculation est obligatoire pour un véhicule motorisé',
+    documentRequired: 'Ce document est obligatoire',
   },
 };

@@ -19,6 +19,7 @@ import { TextField } from '@/components/auth/text-field';
 import { PrimaryButton } from '@/components/ui/primary-button';
 import { Text } from '@/components/ui/text';
 import { Radius, Shadow, Spacing } from '@/constants/theme';
+import { useAuth } from '@/contexts/auth-context';
 import { newPasswordSchema, type NewPasswordValues } from '@/features/auth/schemas';
 import { confirmPasswordReset } from '@/services/api/driver-service';
 import { usePasswordResetStore } from '@/store/password-reset-store';
@@ -42,6 +43,8 @@ export default function NewPasswordScreen() {
   const ticket = usePasswordResetStore((state) => state.ticket);
   const origin = usePasswordResetStore((state) => state.origin);
   const clearReset = usePasswordResetStore((state) => state.clear);
+  const isActivation = origin === 'activation';
+  const { login } = useAuth();
   const [authError, setAuthError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -57,6 +60,22 @@ export default function NewPasswordScreen() {
     try {
       await confirmPasswordReset(email, ticket, values.password);
 
+      // An approved applicant is signed straight in with the password they
+      // just chose. The code they redeemed has already verified the address
+      // (the backend marks it when the password is set), so the root
+      // navigator lets the session through with no second code.
+      if (isActivation) {
+        const result = await login(email, values.password);
+        clearReset();
+        // On success there is nothing to route: the root navigator reacts to
+        // the session appearing and takes it to the map. A failed sign-in
+        // still leaves the password set — let them sign in by hand.
+        if (!result.success) {
+          router.replace({ pathname: '/password', params: { email } });
+        }
+        return;
+      }
+
       // Read before the store is emptied: it decides where this ends.
       const startedInSettings = origin === 'settings';
 
@@ -69,7 +88,13 @@ export default function NewPasswordScreen() {
       // A deliverer who changed their password from Settings still holds a
       // valid session — Keycloak's password write does not end it — so they go
       // back to Settings rather than to the front door they never left.
-      router.replace(startedInSettings ? '/settings' : '/');
+      //
+      // Otherwise straight to the password field for this address, with no
+      // "first sign-in" hint: whether this was a forgotten password or an
+      // approved applicant choosing their first one, it is set now.
+      router.replace(
+        startedInSettings ? '/settings' : { pathname: '/password', params: { email } }
+      );
     } catch (error) {
       setAuthError(
         error instanceof Error
@@ -126,10 +151,12 @@ export default function NewPasswordScreen() {
             bounces={false}>
             <View style={styles.heading}>
               <Text weight="bold" size={24}>
-                New password
+                {isActivation ? t('passwordReset.activateTitle') : 'New password'}
               </Text>
               <Text size={15} color={colors.textSecondary} style={styles.subtitle}>
-                Choose the password you&apos;ll use from now on
+                {isActivation
+                  ? t('passwordReset.activateSubtitle')
+                  : 'Choose the password you’ll use from now on'}
               </Text>
               <Text weight="semibold" size={15} style={styles.headingEmail} numberOfLines={1}>
                 {email}

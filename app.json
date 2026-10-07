@@ -60,6 +60,14 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Hungry Deliverer uses your photos to attach the documents of your deliverer application.",
+          "cameraPermission": "Hungry Deliverer uses your camera to take your live photo and pictures of your documents for your deliverer application.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/images/android-icon-monochrome.png",

@@ -21,9 +21,11 @@ import { create } from 'zustand';
  *
  * 'login' is the classic forgotten-password case — no session, ends at the
  * front door. 'settings' is a deliberate password change by someone already
- * signed in, and ends back in Settings with the session intact.
+ * signed in, and ends back in Settings with the session intact. 'activation'
+ * is an approved applicant choosing their first password: the code was mailed
+ * straight from identification, and the flow ends signed in.
  */
-export type PasswordResetOrigin = 'login' | 'settings';
+export type PasswordResetOrigin = 'login' | 'settings' | 'activation';
 
 interface PasswordResetState {
   /** The address a code was mailed to, and the login username. */

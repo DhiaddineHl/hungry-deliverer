@@ -6,6 +6,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   type ReactNode,
 } from 'react';
 import { AppState } from 'react-native';
@@ -135,6 +136,11 @@ export type SessionActions = {
   validateOrder: () => void;
   confirmDelivery: () => void;
   setSheetExpanded: (expanded: boolean) => void;
+  /**
+   * The map screen reports itself open (true on mount, false on unmount). GPS
+   * — and the permission prompt — only start once it is, never on app open.
+   */
+  setMapOpen: (open: boolean) => void;
 };
 
 type SessionContextValue = SessionState & {
@@ -189,11 +195,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
   const { phase, order } = state;
 
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { data: driver } = useDriver(user?.sub);
   const driverId = driver?.id ?? null;
+  const [mapOpen, setMapOpen] = useState(false);
 
   const { granted: locationGranted, location, courier } = useDriverLocation({
+    // Signed in and looking at the map — not merely the app being open.
+    enabled: isAuthenticated && mapOpen,
     driverId,
     reportEnabled: phase !== 'offline',
     // Accepted until delivered: the customer follows this position live.
@@ -424,6 +433,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         validateOrder,
         confirmDelivery,
         setSheetExpanded,
+        setMapOpen,
       },
     }),
     [

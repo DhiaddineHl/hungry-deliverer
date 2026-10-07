@@ -58,6 +58,16 @@ export default function DeliveryScreen() {
     nearCustomer,
   } = session;
 
+  // GPS starts with this screen, not with the app: the session provider only
+  // asks for location permission once the signed-in deliverer reaches the map.
+  // Screens pushed on top (menu, settings…) leave this mounted, so the watch
+  // keeps running behind them; signing out unmounts it and stops it.
+  const { setMapOpen } = actions;
+  useEffect(() => {
+    setMapOpen(true);
+    return () => setMapOpen(false);
+  }, [setMapOpen]);
+
   const mapRef = useRef<DeliveryMapHandle>(null);
   const [bottomInset, setBottomInset] = useState(0);
   const [mapType, setMapType] = useState<'standard' | 'hybrid'>('standard');

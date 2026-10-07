@@ -58,6 +58,8 @@ export const en = {
     errorGoogleSignUp: 'Google sign-up failed',
     errorLoginFailed: 'Login failed. Please try again.',
     errorUnexpected: 'An unexpected error occurred. Please try again.',
+    errorNoDelivererAccount:
+      'There is no approved deliverer account for this Google address. Enter your email above to apply.',
   },
 
   verification: {
@@ -99,8 +101,49 @@ export const en = {
     changeEmail: 'Change email',
     errorSend: 'We could not send the code. Please try again.',
     errorChange: 'We could not change your password. Please try again.',
+    activateTitle: 'Set your password',
+    activateSubtitle: 'Choose the password you’ll use to sign in and start delivering',
   },
 
+  application: {
+    title: 'Apply to deliver',
+    subtitle: 'Tell us about you and your vehicle. Our team reviews every application.',
+    reapplyTitle: 'Apply again',
+    previousRejected: 'Your previous application was not approved.',
+    rejectionReason: 'Reason: %{reason}',
+    aboutYou: 'About you',
+    vehicle: 'Your vehicle',
+    documents: 'Documents',
+    documentsHint: 'Clear, well-lit photos with every corner visible.',
+    livePhoto: 'Live photo',
+    livePhotoHint: 'A selfie taken now with your camera',
+    idCardFront: 'ID card — front',
+    idCardBack: 'ID card — back',
+    vehicleRegistration: 'Vehicle registration card',
+    optional: 'Optional',
+    takePhoto: 'Take photo',
+    choosePhoto: 'Choose photo',
+    replace: 'Replace',
+    cameraDenied: 'Camera access is needed. You can allow it in your phone settings.',
+    libraryDenied: 'Photo access is needed. You can allow it in your phone settings.',
+    submit: 'SUBMIT APPLICATION',
+    submitting: 'SUBMITTING…',
+    uploading: 'UPLOADING DOCUMENTS (%{done}/%{total})…',
+    uploadFailed:
+      'Your application was saved, but a document could not be uploaded (%{error}). Tap submit to try again.',
+    pendingTitle: 'Application under review',
+    pendingBody:
+      'Thanks for applying! Our team is reviewing your application and will email %{email} once a decision is made.',
+    pendingNextSteps:
+      'Once approved, come back, enter this email and set your password to start delivering.',
+    checkStatus: 'CHECK STATUS',
+    stillPending: 'Still under review — we’ll email you as soon as there is news.',
+    useAnotherEmail: 'Use another email',
+    receivedTitle: 'Application received',
+    receivedBody:
+      'Thank you! Our team will review your application. You will hear from us by email at %{email} or by phone call once it is accepted.',
+    backToStart: 'BACK TO SIGN IN',
+  },
   menu: {
     deliverer: 'Deliverer',
     offline: 'Offline',
@@ -317,6 +360,7 @@ export const en = {
     phoneInvalid: 'Enter a valid phone number',
     vehicleRequired: 'Choose how you deliver',
     licensePlateRequired: 'License plate is required for a motorized vehicle',
+    documentRequired: 'This document is required',
   },
 };
 

@@ -1,75 +1,16 @@
 import { apiClient } from './client';
 import type {
-  AccountLookup,
   Driver,
   DriverInput,
   PasswordResetResult,
   PasswordResetTicket,
-  VehicleType,
   VerificationChallenge,
   VerificationResult,
 } from './types';
 
-export interface DriverRegistration {
-  firstName: string;
-  lastName: string;
-  email: string;
-  password: string;
-  phoneNumber?: string;
-  /** Vehicle class the deliverer signs up with — see below. */
-  vehicleType: VehicleType;
-  licensePlate?: string;
-  licenseNumber?: string;
-  /** ISO date (yyyy-MM-dd), must be in the future. */
-  licenseExpiryDate?: string;
-}
-
-/**
- * Registers a deliverer: one call, and the backend provisions the Keycloak
- * login account and the Driver entity atomically.
- *
- * The vehicle class travels with it and does double duty server-side: it
- * creates the Vehicle assigned to the new driver, and it adds the
- * `VEHICLE_<CLASS>` realm role next to `DRIVER` on the Keycloak user, so the
- * access token says what the deliverer drives. Runs unauthenticated — there
- * is no session yet, which is why `POST /drivers` is the one open driver
- * endpoint.
- */
-export async function registerDriver(registration: DriverRegistration): Promise<Driver> {
-  const input: DriverInput = {
-    name: `${registration.firstName} ${registration.lastName}`.trim(),
-    fullname: { firstName: registration.firstName, lastName: registration.lastName },
-    contact: {
-      email: registration.email,
-      phones: registration.phoneNumber ? [registration.phoneNumber] : [],
-    },
-    licenseNumber: registration.licenseNumber,
-    licenseExpiryDate: registration.licenseExpiryDate,
-    vehicle: {
-      type: registration.vehicleType,
-      licensePlate: registration.licensePlate,
-      isActive: true,
-    },
-    password: registration.password,
-  };
-  const { data } = await apiClient.post<Driver>('/drivers', input);
-  return data;
-}
-
-/**
- * The identification step: one address in, and the answer decides which screen
- * comes next — the password field for an address that already has a deliverer
- * account, the sign-up form for one that does not.
- *
- * Runs unauthenticated, like the two calls below: it is the very first thing
- * the app asks, before any session exists.
- */
-export async function lookupAccount(email: string): Promise<AccountLookup> {
-  const { data } = await apiClient.post<AccountLookup>('/drivers/verification/lookup', {
-    email,
-  });
-  return data;
-}
+// There is no self-registration call any more: a deliverer applies through
+// `driver-request-service.ts`, and the account only comes into existence when
+// staff approve the application. The identification lookup moved there too.
 
 /**
  * Asks the backend to mail a one-time code to a registered address — the first
@@ -162,31 +103,6 @@ export async function confirmPasswordReset(
     ticket,
     newPassword,
   });
-  return data;
-}
-
-/**
- * Creates the driver record for the account the current access token belongs
- * to, and returns the existing one if there already is one (the endpoint is
- * idempotent).
- *
- * Social logins never pass through `registerDriver`: Keycloak provisions the
- * account itself when brokering to Google, so `POST /drivers` — which always
- * creates a NEW Keycloak user — answers 409 for them. `POST /drivers/me` is
- * the authenticated counterpart: it attaches a record to the identity the
- * token already proves, so no password is sent and the `sub` is never taken
- * from this body. Email and name are read from Keycloak server-side; only the
- * optional extras below are ours to send.
- *
- * The vehicle class is optional here — a "Continue with Google" sign-in has no
- * sign-up form to carry one. The deliverer is created PENDING_APPROVAL either
- * way, and the class can be filled in later through `updateDriver`, which is
- * what grants the `VEHICLE_<CLASS>` realm role.
- */
-export async function createDriverForAccount(
-  extras: Pick<DriverInput, 'name' | 'contact' | 'vehicle' | 'licenseNumber' | 'licenseExpiryDate'> = {}
-): Promise<Driver> {
-  const { data } = await apiClient.post<Driver>('/drivers/me', extras);
   return data;
 }
 

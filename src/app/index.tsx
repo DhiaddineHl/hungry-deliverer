@@ -28,9 +28,10 @@ import { TextField } from '@/components/auth/text-field';
 import { PrimaryButton } from '@/components/ui/primary-button';
 import { Text } from '@/components/ui/text';
 import { Radius, Shadow, Spacing } from '@/constants/theme';
-import { useAuth, wasCancelled } from '@/contexts/auth-context';
+import { NO_DELIVERER_ACCOUNT, useAuth, wasCancelled } from '@/contexts/auth-context';
+import { needsActivation, routeForApplicant, startActivation } from '@/features/auth/applicant-route';
 import { identificationSchema, type IdentificationValues } from '@/features/auth/schemas';
-import { lookupAccount } from '@/services/api/driver-service';
+import { lookupApplicant } from '@/services/api/driver-request-service';
 
 // The landing → login reveal plays only the first time the app is opened.
 // Kept at module scope so it survives remounts within a session.
@@ -42,10 +43,11 @@ const INTRO_DURATION = 850;
 /**
  * Identification — the single door into the app.
  *
- * There is no "log in or sign up?" choice to make any more: the deliverer types
- * an address, the backend says whether an account already stands behind it, and
- * that answer picks the next screen (the password field, or the sign-up form
- * with the address already settled). Which is why the cross-links to the other
+ * There is no "log in or apply?" choice to make: the deliverer types an
+ * address, the backend says whether an account or an application already
+ * stands behind it, and that answer picks the next screen (the password field,
+ * the "under review" screen, or the application form with the address already
+ * settled). Which is why the cross-links to the other
  * auth screen are gone from here and from the screens it leads to — every one
  * of them is reachable only through this one.
  */
@@ -95,14 +97,11 @@ export default function IdentificationScreen() {
     setIsSubmitting(true);
     try {
       const email = values.email.trim().toLowerCase();
-      const lookup = await lookupAccount(email);
-      // The address travels as a route param rather than in a store: it is not
-      // a secret (unlike the password, which never leaves memory), and a param
-      // survives the screen being remounted by a reload.
-      router.push({
-        pathname: lookup.registered ? '/password' : '/register',
-        params: { email },
-      });
+      // Four possible answers: an account (password), an application under
+      // review (status screen), a declined one (apply again) or nothing yet
+      // (apply) — see `routeForApplicant`.
+      const lookup = await lookupApplicant(email);
+      router.push(needsActivation(lookup) ? await startActivation(email) : routeForApplicant(lookup));
     } catch (error) {
       setAuthError(
         error instanceof Error ? error.message : t('auth.errorServerUnreachable')
@@ -122,7 +121,11 @@ export default function IdentificationScreen() {
       // realm that reports the address as unverified).
       if (!result.success && !wasCancelled(result.error)) {
         // Dismissing the browser is a choice, not a failure worth a red banner.
-        setAuthError(result.error ?? t('auth.errorGoogleSignIn'));
+        setAuthError(
+          result.error === NO_DELIVERER_ACCOUNT
+            ? t('auth.errorNoDelivererAccount')
+            : (result.error ?? t('auth.errorGoogleSignIn'))
+        );
       }
     } finally {
       setIsGoogleLoading(false);

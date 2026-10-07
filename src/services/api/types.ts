@@ -228,20 +228,90 @@ export interface PasswordResetResult {
   updated: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Deliverer applications (delivery.hungry.driverrequest)
+// ---------------------------------------------------------------------------
+
 /**
- * Answer to `POST /drivers/verification/lookup` — the identification step.
- * One address in, and `registered` decides which screen comes next: the
- * password field for an address that already has a deliverer account, the
- * sign-up form for one that does not.
+ * `DriverRequestLookup.Outcome` — which screen the identification step leads to.
  *
- * Deliverer-scoped like the two calls above: the backend resolves the address
- * against Driver records only, so a customer's address answers
- * `registered: false` here.
+ *   - `NOT_FOUND`: no account and no application — the application form.
+ *   - `PENDING`: an application is under review — the "under review" screen,
+ *     no resubmission.
+ *   - `REJECTED`: the latest application was declined — the form again, with
+ *     the staff-supplied reason if there is one.
+ *   - `ACCOUNT_EXISTS`: the application was approved (or the account predates
+ *     applications) — the password screen.
  */
-export interface AccountLookup {
+export type ApplicantOutcome = 'NOT_FOUND' | 'PENDING' | 'REJECTED' | 'ACCOUNT_EXISTS';
+
+/** Answer to `POST /driver-requests/verification/lookup`. */
+export interface ApplicantLookup {
   email: string;
-  /** A deliverer is registered under this address — ask for a password. */
-  registered: boolean;
-  /** That account has already confirmed the address. */
+  outcome: ApplicantOutcome;
+  /**
+   * Only meaningful for `ACCOUNT_EXISTS`. An approved applicant's account is
+   * created unverified with a password nobody knows, so `false` here is what
+   * tells the password screen to offer "set your password" first.
+   */
   emailVerified: boolean;
+  /** Only for `REJECTED`, and only when staff gave one. */
+  rejectionReason: string | null;
 }
+
+/** `DriverRequestStatus`. */
+export type DriverRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+/**
+ * `DriverRequestInputData`. No status and no document URLs: the status is
+ * engine-driven, and each document is attached after creation through its own
+ * upload endpoint.
+ */
+export interface DriverRequestInput {
+  name?: string;
+  fullname: Fullname;
+  contact: PersonalContact;
+  vehicleType: VehicleType;
+  /** Required server-side (`@NotBlank`). */
+  licensePlate: string;
+  licenseNumber?: string;
+}
+
+/** `DriverRequestOutputData`. */
+export interface DriverRequest {
+  id: string;
+  code?: string | null;
+  name?: string | null;
+  fullname?: Fullname | null;
+  contact?: PersonalContact | null;
+  vehicleType?: VehicleType | null;
+  licensePlate?: string | null;
+  licenseNumber?: string | null;
+  status?: DriverRequestStatus | null;
+  rejectionReason?: string | null;
+  livePhotoUrl?: string | null;
+  idCardFrontUrl?: string | null;
+  idCardBackUrl?: string | null;
+  vehicleRegistrationCardUrl?: string | null;
+  createdAt?: string | null;
+}
+
+/**
+ * The four upload endpoints under `/driver-requests/{id}/…`. The live photo
+ * and both sides of the ID card are required before staff can approve; the
+ * vehicle registration card is optional.
+ */
+export const APPLICATION_DOCUMENTS = [
+  'live-photo',
+  'id-card-front',
+  'id-card-back',
+  'vehicle-registration-card',
+] as const;
+
+export type ApplicationDocument = (typeof APPLICATION_DOCUMENTS)[number];
+
+export const REQUIRED_APPLICATION_DOCUMENTS: readonly ApplicationDocument[] = [
+  'live-photo',
+  'id-card-front',
+  'id-card-back',
+];

@@ -27,8 +27,10 @@ SplashScreen.preventAutoHideAsync();
 /**
  * Routes reachable without a session. The identification screen — the single
  * door in, where the address alone decides whether the next step is the
- * password field or sign-up — is the index route, so its segment is undefined.
- * 'password' and 'register' are the two screens it leads to; 'auth' is the
+ * password field or the deliverer application — is the index route, so its
+ * segment is undefined. 'password', 'register' (the application form) and
+ * 'application-status' (an application under review) are the screens it leads
+ * to; 'auth' is the
  * OAuth deep-link landing group (app/auth/callback.tsx), which must not be
  * bounced back to login while the token exchange is still in flight.
  * 'verification' is reached straight from sign-up, before the account has a
@@ -40,6 +42,7 @@ const AUTH_ROUTES = [
   undefined,
   'password',
   'register',
+  'application-status',
   'auth',
   'verification',
   'forgot-password',
@@ -102,6 +105,7 @@ function RootNavigator() {
         <Stack.Screen name="index" />
         <Stack.Screen name="password" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="register" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="application-status" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="verification" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="forgot-password" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="reset-code" options={{ animation: 'slide_from_right' }} />

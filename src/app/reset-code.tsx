@@ -53,6 +53,10 @@ export default function ResetCodeScreen() {
   const insets = useSafeAreaInsets();
   const email = usePasswordResetStore((state) => state.email);
   const setTicket = usePasswordResetStore((state) => state.setTicket);
+  // An approved applicant activating their account rather than someone who
+  // forgot a password: their way back is identification, not the reset form.
+  const isActivation = usePasswordResetStore((state) => state.origin === 'activation');
+  const restartRoute = isActivation ? '/' : '/forgot-password';
 
   const [codeLength, setCodeLength] = useState(DEFAULT_CODE_LENGTH);
   const [code, setCode] = useState<string[]>(() => Array(DEFAULT_CODE_LENGTH).fill(''));
@@ -147,7 +151,7 @@ export default function ResetCodeScreen() {
             </Text>
             <PrimaryButton
               label={t('common.startAgain')}
-              onPress={() => router.replace('/forgot-password')}
+              onPress={() => router.replace(restartRoute)}
               style={styles.emptyButton}
             />
           </View>
@@ -175,7 +179,7 @@ export default function ResetCodeScreen() {
             bounces={false}>
             <View style={styles.heading}>
               <Text weight="bold" size={24}>
-                {t('passwordReset.resetTitle')}
+                {isActivation ? t('passwordReset.activateTitle') : t('passwordReset.resetTitle')}
               </Text>
               <Text size={15} color={colors.textSecondary} style={styles.subtitle}>
                 {t('passwordReset.sentCodeTo')}
@@ -239,7 +243,7 @@ export default function ResetCodeScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t('verification.useDifferentEmail')}
-              onPress={() => router.replace('/forgot-password')}
+              onPress={() => router.replace(restartRoute)}
               hitSlop={8}>
               <Text size={14} color={colors.textSecondary} style={styles.changeEmail}>
                 {t('verification.wrongEmail')}
