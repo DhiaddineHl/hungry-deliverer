@@ -1,229 +1,189 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useCallback } from 'react';
-import { Pressable, View } from 'react-native';
-import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
+import { useEffect, useState } from 'react';
+import { View } from 'react-native';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { useLocale } from '@/contexts/locale-context';
-import { makeStyles } from '@/hooks/use-themed-styles';
-import { useColors } from '@/contexts/theme-context';
-import { PrimaryButton } from '@/components/ui/primary-button';
+import { PrimaryButton, SecondaryButton } from '@/components/ui/button';
+import { Badge, Divider } from '@/components/ui/content';
 import { Text } from '@/components/ui/text';
-import { Radius, Shadow, Spacing } from '@/constants/theme';
-import type { Order, RouteLeg } from '@/features/session/types';
-
-type LegRowProps = {
-  leg: RouteLeg;
-  label: string;
-  selected: boolean;
-  onSelect: (leg: RouteLeg) => void;
-};
-
-function LegRow({ leg, label, selected, onSelect }: LegRowProps) {
-  const styles = useStyles();
-  const handlePress = useCallback(() => onSelect(leg), [leg, onSelect]);
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      accessibilityLabel={`Show ${label} on the map`}
-      onPress={handlePress}
-      style={styles.legRow}>
-      <View style={styles.bullet} />
-      <Text
-        weight={selected ? 'bold' : 'regular'}
-        size={16}
-        numberOfLines={1}
-        style={styles.legLabel}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
+import { StopRow } from '@/components/sheets/trip-parts';
+import { useLocale } from '@/contexts/locale-context';
+import { formatCountdown, formatKm, formatMoney } from '@/features/format';
+import type { Order } from '@/features/session/types';
+import { Icon, makeStyles } from '@/theme';
 
 type Props = {
   order: Order;
-  previewedLeg: RouteLeg;
-  /** An accept is in flight — the CTA is disabled until the backend answers. */
+  /** An accept is in flight — Accept shows a spinner until the backend answers. */
   accepting: boolean;
-  onPreviewLeg: (leg: RouteLeg) => void;
   onAccept: () => void;
   onDecline: () => void;
 };
 
+/** Whole seconds left before `deadline`, ticking once a second. */
+function useSecondsLeft(deadline: number) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [deadline]);
+  return Math.max(0, Math.ceil((deadline - now) / 1000));
+}
+
 /**
- * "Order Found" — the offer on the table, with the auto-decline countdown
- * running against the deadline the backend stamped on it (`order.countdownMs`,
- * fixed when the offer was mapped, so the sweep never restarts on a re-render).
+ * D3 — the offer on the table. The countdown runs against the deadline the
+ * backend stamped on the offer (`order.expiresAt`), so a re-render never
+ * restarts it; the session auto-declines when it reaches zero.
+ *
+ * The headline figure is what the rider earns. The offer feed does not carry
+ * that yet, so until it does the card shows the order total — labelled as the
+ * order total, never passed off as earnings.
  */
-export function OfferCard({
-  order,
-  previewedLeg,
-  accepting,
-  onPreviewLeg,
-  onAccept,
-  onDecline,
-}: Props) {
+export function OfferCard({ order, accepting, onAccept, onDecline }: Props) {
   const { t } = useLocale();
-  const colors = useColors();
   const styles = useStyles();
+  const secondsLeft = useSecondsLeft(order.expiresAt);
+
+  // The bar starts from the fraction already gone (the offer may have waited
+  // in a push) and drains linearly to the deadline on the UI thread.
+  const progress = useSharedValue(1);
+  useEffect(() => {
+    const remaining = Math.max(0, order.expiresAt - Date.now());
+    progress.set(Math.min(1, remaining / order.countdownMs));
+    progress.set(withTiming(0, { duration: remaining, easing: Easing.linear }));
+  }, [order.expiresAt, order.countdownMs, progress]);
+  const barStyle = useAnimatedStyle(() => ({ transform: [{ scaleX: progress.get() }] }));
+
+  const earns = order.riderEarningsTnd;
+  const paymentLine =
+    order.paymentMethod === 'cash'
+      ? t('delivery.cashOrder', { amount: formatMoney(order.totalTnd) })
+      : order.paymentMethod === 'online'
+        ? t('delivery.paidOnline')
+        : order.items.length === 1
+          ? t('common.itemsOne')
+          : t('common.itemsOther', { count: order.items.length });
+
   return (
-    <Animated.View
-      entering={FadeInDown.duration(280)}
-      exiting={FadeOutDown.duration(180)}
-      style={styles.card}>
-      <View style={styles.topRow}>
-        <View style={styles.chip}>
-          <Text weight="medium" size={14} color={colors.orange}>
-            {t('delivery.delivery')}
+    <View style={styles.card}>
+      <View style={styles.header}>
+        <Badge label={t('delivery.newOrder')} />
+        <View
+          style={styles.countdown}
+          accessibilityLabel={t('delivery.secondsLeft', { seconds: secondsLeft })}>
+          <Icon name="countdown" size="small" />
+          <Text variant="metaStrong">{formatCountdown(secondsLeft)}</Text>
+        </View>
+      </View>
+
+      <View style={styles.track} accessibilityElementsHidden>
+        <Animated.View style={[styles.fill, barStyle]} />
+      </View>
+
+      <View style={styles.earnings}>
+        <View style={styles.flex}>
+          <Text variant="caption" color="inkMuted" style={styles.regular}>
+            {earns !== null ? t('delivery.youEarn') : t('delivery.orderTotal')}
+          </Text>
+          <Text variant="offerAmount" adjustsFontSizeToFit numberOfLines={1}>
+            {formatMoney(earns ?? order.totalTnd)}
           </Text>
         </View>
+        <View style={styles.trip}>
+          <Text variant="metaStrong">
+            {t('delivery.tripSummary', { minutes: order.durationMinutes, km: formatKm(order.distanceKm) })}
+          </Text>
+          <Text variant="meta" color="inkMuted" style={styles.regular}>
+            {paymentLine}
+          </Text>
+        </View>
+      </View>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('delivery.declineOrder')}
+      <View style={styles.stops}>
+        <StopRow
+          icon="store"
+          caption={t('delivery.pickupDistance', { minutes: order.etaToStoreMinutes })}
+          name={order.store.name}
+          address={order.store.address}
+        />
+        <Divider />
+        {/* Before accepting, the rider only sees the customer's area. */}
+        <StopRow icon="pin" caption={t('delivery.dropoff')} name={order.customer.areaLabel} />
+      </View>
+
+      <View style={styles.actions}>
+        <SecondaryButton
+          label={t('delivery.decline')}
           onPress={onDecline}
-          style={({ pressed }) => [styles.close, pressed && styles.pressed]}>
-          <Ionicons name="close" size={20} color={colors.orange} />
-        </Pressable>
+          disabled={accepting}
+          style={styles.decline}
+        />
+        <PrimaryButton
+          label={accepting ? t('delivery.accepting') : t('delivery.accept')}
+          onPress={onAccept}
+          loading={accepting}
+          style={styles.flex}
+        />
       </View>
-
-      <Text weight="bold" size={34} style={styles.payout}>
-        {order.totalTnd.toFixed(1)} TND
-      </Text>
-      <Text size={13} color={colors.textSecondary} style={styles.payoutCaption}>
-        {t('delivery.orderTotal', { count: order.items.length })}
-      </Text>
-
-      <View style={styles.metaRow}>
-        <Ionicons name="time-outline" size={18} color={colors.text} />
-        <Text size={16}>{t('delivery.tripSummary', { minutes: order.durationMinutes, km: order.distanceKm })}</Text>
-      </View>
-      <View style={styles.metaRow}>
-        <Ionicons name="storefront-outline" size={18} color={colors.text} />
-        <Text size={16}>{t('delivery.pickupEta', { minutes: order.etaToStoreMinutes })}</Text>
-      </View>
-
-      <View style={styles.legs}>
-        <View style={styles.legRows}>
-          <View style={styles.connector} />
-          <LegRow
-            leg="store"
-            label={order.store.name}
-            selected={previewedLeg === 'store'}
-            onSelect={onPreviewLeg}
-          />
-          <LegRow
-            leg="customer"
-            label={order.customer.areaLabel}
-            selected={previewedLeg === 'customer'}
-            onSelect={onPreviewLeg}
-          />
-        </View>
-
-        {/* Sits on its own line so it never squeezes a leg's name. */}
-        <View style={styles.tooltip}>
-          <Text weight="medium" size={12} color={colors.onNavy}>
-            {t('delivery.tapToSeeLocation')}
-          </Text>
-        </View>
-      </View>
-
-      <PrimaryButton
-        label={accepting ? t('delivery.accepting') : t('delivery.acceptAndGo')}
-        disabled={accepting}
-        onPress={onAccept}
-        countdownMs={order.countdownMs}
-        style={styles.cta}
-      />
-    </Animated.View>
+    </View>
   );
 }
 
-const useStyles = makeStyles((c) => ({
+const useStyles = makeStyles((c, t) => ({
   card: {
-    backgroundColor: c.card,
-    borderRadius: Radius.xl,
-    padding: Spacing.five,
-    ...Shadow.card,
+    gap: 14,
   },
-  topRow: {
+  flex: {
+    flex: 1,
+  },
+  regular: {
+    fontFamily: t.typography.description.fontFamily,
+  },
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 12,
   },
-  chip: {
-    backgroundColor: c.orangeSoft,
-    paddingHorizontal: Spacing.four,
-    paddingVertical: 6,
-    borderRadius: Radius.pill,
-  },
-  close: {
-    width: 32,
-    height: 32,
-    borderRadius: Radius.pill,
-    backgroundColor: c.orangeSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  payout: {
-    textAlign: 'center',
-    marginTop: Spacing.four,
-  },
-  payoutCaption: {
-    textAlign: 'center',
-    marginTop: 2,
-  },
-  metaRow: {
+  countdown: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
-    marginTop: Spacing.three,
+    gap: 6,
   },
-  legs: {
-    marginTop: Spacing.four,
-    marginBottom: Spacing.five,
+  track: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: c.surfaceSunken,
+    overflow: 'hidden',
+    marginTop: -6,
   },
-  legRows: {
-    position: 'relative',
+  fill: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: c.primary,
+    transformOrigin: 'left',
   },
-  /** The hairline joining the two bullets. */
-  connector: {
-    position: 'absolute',
-    left: 4,
-    top: 22,
-    bottom: 22,
-    width: 1,
-    backgroundColor: c.text,
-  },
-  legRow: {
+  earnings: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingVertical: Spacing.two,
+    alignItems: 'flex-end',
+    gap: 12,
   },
-  bullet: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    backgroundColor: c.text,
+  trip: {
+    alignItems: 'flex-end',
+    gap: 2,
+    paddingBottom: 4,
   },
-  legLabel: {
-    flexShrink: 1,
+  stops: {
+    borderWidth: 1,
+    borderColor: c.divider,
+    borderRadius: t.radius.thumb,
+    paddingVertical: 4,
+    paddingHorizontal: 14,
   },
-  tooltip: {
-    alignSelf: 'flex-start',
-    marginTop: Spacing.two,
-    marginLeft: 21,
-    backgroundColor: c.teal,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: 5,
-    borderRadius: Radius.sm,
+  actions: {
+    flexDirection: 'row',
+    gap: 12,
   },
-  cta: {
-    marginTop: Spacing.two,
-  },
-  pressed: {
-    opacity: 0.7,
+  decline: {
+    width: 120,
   },
 }));

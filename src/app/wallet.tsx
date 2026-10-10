@@ -1,157 +1,118 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Fragment } from 'react';
+import { View } from 'react-native';
 
-import { useLocale } from '@/contexts/locale-context';
-import { makeStyles } from '@/hooks/use-themed-styles';
-import { useColors } from '@/contexts/theme-context';
-import { PrimaryButton } from '@/components/ui/primary-button';
-import { PageShell } from '@/components/ui/page-shell';
+import { PrimaryButton, TextLink } from '@/components/ui/button';
+import { Card, Divider, IconWell } from '@/components/ui/content';
+import { Page, SectionHeader } from '@/components/ui/page';
 import { Text } from '@/components/ui/text';
-import { Radius, Spacing } from '@/constants/theme';
+import { useToast } from '@/components/ui/toast';
+import { useLocale } from '@/contexts/locale-context';
 import {
-  CASH_OUT_FEE,
-  formatBalance,
-  formatDinars,
   PAYOUT_METHOD,
   WALLET_BALANCE,
   WALLET_TRANSACTIONS,
   WEEK_STATS,
+  WITHDRAW_FEE,
   type WalletTransaction,
 } from '@/data/earnings';
-
-/** Tallest bar in the chart, in points. */
-const CHART_HEIGHT = 120;
+import { formatDuration, formatMoney, formatSignedMoney } from '@/features/format';
+import { makeStyles, useTheme, type IconName } from '@/theme';
 
 /**
- * The wallet: what can be cashed out right now, how the week went, where the
- * money lands, and the last few movements.
- *
- * "History" and "See all" both lead to the delivery-history screen — the frame
- * gives them separate links, but there is one list of past work behind both.
+ * W1/W2 — Earnings: what can be withdrawn now, how the week went, where the
+ * money lands, and the last few movements. Figures come from the placeholder
+ * module until the backend has earnings endpoints (see data/earnings.ts).
  */
 export default function WalletScreen() {
-  const colors = useColors();
-  const styles = useStyles();
   const { t } = useLocale();
+  const styles = useStyles();
   const router = useRouter();
+  const showToast = useToast((state) => state.show);
   const openHistory = () => router.push('/delivery-history');
-
-  // Cashing out and editing the payout method are the two actions with no
-  // endpoint behind them yet (see data/earnings.ts) — wired to nothing rather
-  // than hidden, so the frame stays intact and the gap is one call each.
-  const cashOut = () => {};
-  const managePayoutMethod = () => {};
+  // Withdrawing and managing the payout method have no endpoint yet; they say
+  // so instead of silently doing nothing.
+  const notYet = () => showToast(t('wallet.notAvailable'));
 
   return (
-    <PageShell title={t('wallet.title')}>
-      <View style={styles.balanceHeader}>
-        <Text size={20}>{t('wallet.balance')}</Text>
-        <LinkText label={t('wallet.history')} onPress={openHistory} />
-      </View>
-
-      <View style={styles.balanceBlock}>
-        <Text size={17} color={colors.textMuted}>
-          {t('wallet.availableForCashOut')}
-        </Text>
-        <View style={styles.balanceRow}>
-          <Text weight="bold" size={44} color={colors.orange}>
-            {formatBalance(WALLET_BALANCE.amount)}
+    <Page title={t('wallet.title')} trailing={<TextLink label={t('wallet.history')} onPress={openHistory} />}>
+      <Card style={styles.balance}>
+        <View style={styles.balanceFigure}>
+          <Text variant="meta" color="inkMuted" style={styles.regular}>
+            {t('wallet.availableToWithdraw')}
           </Text>
-          <Text weight="bold" size={16} color={colors.orange} style={styles.balanceCurrency}>
-            {t('common.tnd')}
+          <Text variant="offerAmount" adjustsFontSizeToFit numberOfLines={1}>
+            {formatMoney(WALLET_BALANCE.amount)}
           </Text>
         </View>
-
-        <PrimaryButton label={t('wallet.cashOutNow')} onPress={cashOut} style={styles.cashOut} />
-
-        <Text size={14} color={colors.textMuted}>
-          {t('wallet.cashOutCaption', {
-            fee: CASH_OUT_FEE.amount,
-            currency: t('common.tnd'),
-          })}
+        <PrimaryButton label={t('wallet.withdrawNow')} icon="withdraw" onPress={notYet} />
+        <Text variant="caption" color="inkMuted" align="center" style={styles.regular}>
+          {t('wallet.withdrawCaption', { fee: formatMoney(WITHDRAW_FEE.amount) })}
         </Text>
-        <LinkText
-          label={t('wallet.managePayoutMethod')}
-          onPress={managePayoutMethod}
-          weight="semibold"
-        />
-      </View>
+      </Card>
 
-      <View style={styles.divider} />
-
-      <Text weight="bold" size={19}>
-        {t('wallet.thisWeek')}
-      </Text>
-      <View style={styles.stats}>
+      <SectionHeader
+        title={t('wallet.thisWeek')}
+        trailing={
+          <Text variant="meta" color="inkMuted" tabular style={styles.regular}>
+            {formatMoney(WEEK_STATS.total.amount)}
+          </Text>
+        }
+        style={styles.section}
+      />
+      <Card radius="thumb" style={styles.stats}>
         <Stat value={String(WEEK_STATS.trips)} label={t('wallet.trips')} />
-        <Stat value={WEEK_STATS.onlineTime} label={t('wallet.onlineTime')} />
-        <Stat
-          value={`${formatBalance(WEEK_STATS.averagePerTrip.amount)} ${t('common.tnd')}`}
-          label={t('wallet.avgPerTrip')}
-        />
-      </View>
+        <View style={styles.statDivider} />
+        <Stat value={formatDuration(WEEK_STATS.onlineMinutes).replace(' min', '')} label={t('wallet.online')} />
+        <View style={styles.statDivider} />
+        <Stat value={formatMoney(WEEK_STATS.averagePerTrip.amount)} label={t('wallet.avgPerTrip')} />
+      </Card>
+      <WeeklyBarChart />
 
-      <Text weight="bold" size={17} style={styles.chartTitle}>
-        {t('wallet.earningsThisWeek')}
-      </Text>
-      <WeekChart />
-
-      <View style={styles.divider} />
-
-      <View style={styles.sectionHeader}>
-        <Text weight="bold" size={19}>
-          {t('wallet.paymentMethod')}
-        </Text>
-        <LinkText label={t('wallet.manage')} onPress={managePayoutMethod} weight="semibold" />
-      </View>
-      <View style={styles.payout}>
-        <View style={styles.payoutIcon}>
-          <Ionicons name="card-outline" size={22} color={colors.onNavy} />
-        </View>
-        <View>
-          <Text weight="semibold" size={16}>
-            •••• •••• •••• {PAYOUT_METHOD.last4}
+      <SectionHeader
+        title={t('wallet.payoutMethod')}
+        trailing={<TextLink label={t('wallet.manage')} onPress={notYet} />}
+        style={styles.sectionLarge}
+      />
+      <Card radius="thumb" style={styles.payout}>
+        <IconWell icon="payoutCard" tone="ink" />
+        <View style={styles.flex}>
+          <Text variant="itemTitle" style={styles.cardDigits}>
+            •••• {PAYOUT_METHOD.last4}
           </Text>
-          <Text size={14} color={colors.textMuted}>
-            {t('wallet.debitCard')}
+          <Text variant="caption" color="inkMuted" style={styles.regular}>
+            {t('wallet.bankCard')}
             {PAYOUT_METHOD.isPrimary ? ` · ${t('wallet.primary')}` : ''}
           </Text>
         </View>
-      </View>
+      </Card>
 
-      <View style={styles.divider} />
-
-      <View style={styles.sectionHeader}>
-        <Text weight="bold" size={19}>
-          {t('wallet.ordersHistory')}
-        </Text>
-        <LinkText label={t('wallet.seeAll')} onPress={openHistory} weight="semibold" />
-      </View>
-      {WALLET_TRANSACTIONS.map((transaction) => (
-        <TransactionRow key={transaction.id} transaction={transaction} />
-      ))}
-
-      <LinkText
-        label={t('wallet.viewAllTransactions')}
-        onPress={openHistory}
-        weight="semibold"
-        style={styles.viewAll}
+      <SectionHeader
+        title={t('wallet.recentActivity')}
+        trailing={<TextLink label={t('wallet.seeAll')} onPress={openHistory} />}
+        style={styles.sectionLarge}
       />
-    </PageShell>
+      <View style={styles.transactions}>
+        {WALLET_TRANSACTIONS.map((transaction, index) => (
+          <Fragment key={transaction.id}>
+            {index > 0 ? <Divider /> : null}
+            <TransactionRow transaction={transaction} />
+          </Fragment>
+        ))}
+      </View>
+    </Page>
   );
 }
 
-/** One of the three figures under "This week". */
+/** One cell of the three-column week grid. */
 function Stat({ value, label }: { value: string; label: string }) {
-  const colors = useColors();
   const styles = useStyles();
   return (
     <View style={styles.stat}>
-      <Text weight="bold" size={22} color={colors.orange} numberOfLines={1}>
+      <Text variant="stat" numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
-      <Text size={15} color={colors.textMuted}>
+      <Text variant="caption" color="inkMuted" style={styles.regular}>
         {label}
       </Text>
     </View>
@@ -159,218 +120,177 @@ function Stat({ value, label }: { value: string; label: string }) {
 }
 
 /**
- * Seven bars scaled against the best day of the week, with today picked out in
- * orange. A hand-drawn chart rather than a charting dependency: it is one
- * series of seven values, and the frame asks for nothing else — no axis, no
- * gridlines, no interaction.
+ * Seven bars scaled against the week's best day; today in orange with its
+ * amount above it. Hand-drawn: one series of seven values, no axis, no
+ * interaction — a charting dependency would be all cost.
  */
-function WeekChart() {
+function WeeklyBarChart() {
   const { t } = useLocale();
-  const colors = useColors();
+  const { size } = useTheme();
   const styles = useStyles();
   const peak = Math.max(...WEEK_STATS.daily.map((entry) => entry.amount), 1);
+  const noTrips = WEEK_STATS.daily.every((entry) => entry.amount === 0);
 
   return (
     <View style={styles.chart}>
-      {WEEK_STATS.daily.map((entry, index) => {
-        const isToday = index === WEEK_STATS.todayIndex;
-        return (
-          <View key={entry.day} style={styles.chartColumn}>
-            <View style={styles.chartTrack}>
-              <View
-                accessibilityLabel={`${t(`weekdays.${entry.day}`)}: ${formatDinars(entry.amount)} ${t('common.tnd')}`}
-                style={[
-                  styles.bar,
-                  {
-                    // A floor of 6pt keeps a quiet day visible as a stub
-                    // instead of collapsing it to nothing.
-                    height: Math.max(6, (entry.amount / peak) * CHART_HEIGHT),
-                    backgroundColor: isToday ? colors.orange : colors.chartBar,
-                  },
-                ]}
-              />
+      <View style={[styles.bars, { height: size.chartHeight }]}>
+        {WEEK_STATS.daily.map((entry, index) => {
+          const isToday = index === WEEK_STATS.todayIndex;
+          // A 6 pt floor keeps a quiet day visible instead of collapsing it.
+          const height = Math.max(6, (entry.amount / peak) * (size.chartHeight - 20));
+          return (
+            <View
+              key={entry.day}
+              style={styles.barColumn}
+              accessible
+              accessibilityLabel={`${t(`weekdays.${entry.day}`)}: ${formatMoney(entry.amount)}`}>
+              {isToday && !noTrips ? <Text variant="chartValue">{formatMoney(entry.amount)}</Text> : null}
+              <View style={[styles.bar, isToday && styles.barToday, { height }]} />
             </View>
-            <Text size={14} color={colors.textMuted}>
+          );
+        })}
+      </View>
+      <View style={styles.days}>
+        {WEEK_STATS.daily.map((entry, index) => {
+          const isToday = index === WEEK_STATS.todayIndex;
+          return (
+            <Text
+              key={entry.day}
+              variant="caption"
+              color={isToday ? 'ink' : 'inkMuted'}
+              align="center"
+              style={[styles.day, isToday && styles.dayToday]}>
               {t(`weekdays.${entry.day}`)}
             </Text>
-          </View>
-        );
-      })}
+          );
+        })}
+      </View>
     </View>
   );
 }
 
-/** Composes "Order #2043 · Today, 14:32" from its parts, in the right order. */
-function transactionLabel(
-  t: ReturnType<typeof useLocale>['t'],
-  transaction: WalletTransaction
-): string {
-  const what =
-    transaction.kind === 'order'
-      ? t('wallet.orderTransaction', { number: transaction.orderNumber ?? '' })
-      : t(transaction.kind === 'bonus' ? 'wallet.weeklyBonus' : 'wallet.cashOut');
-  const whenKey =
-    transaction.when === 'today'
-      ? 'wallet.today'
-      : transaction.when === 'yesterday'
-        ? 'wallet.yesterday'
-        : 'wallet.monday';
-  return `${what} · ${t(whenKey, { time: transaction.time })}`;
-}
+const TRANSACTION_ICONS: Record<WalletTransaction['kind'], IconName> = {
+  order: 'delivery',
+  bonus: 'bonus',
+  withdrawal: 'withdraw',
+};
 
 function TransactionRow({ transaction }: { transaction: WalletTransaction }) {
   const { t } = useLocale();
-  const colors = useColors();
   const styles = useStyles();
-  const isCredit = transaction.amount >= 0;
+  const credit = transaction.amount >= 0;
+  const title =
+    transaction.kind === 'order'
+      ? t('wallet.orderTransaction', { number: transaction.orderNumber ?? '' })
+      : transaction.kind === 'bonus'
+        ? t('wallet.weeklyBonus')
+        : t('wallet.withdrawal');
+  const when = t(`wallet.${transaction.when}`, { time: transaction.time });
+
   return (
-    <View style={styles.transaction}>
-      <View style={styles.transactionIcon}>
-        <Ionicons name={transaction.icon} size={18} color={colors.onNavy} />
+    <View style={styles.transaction} accessible accessibilityLabel={`${title}, ${when}, ${formatSignedMoney(transaction.amount)}`}>
+      <IconWell icon={TRANSACTION_ICONS[transaction.kind]} tone={transaction.kind === 'bonus' ? 'primary' : 'neutral'} />
+      <View style={styles.flex}>
+        <Text variant="itemLabel" numberOfLines={1}>
+          {title}
+        </Text>
+        <Text variant="caption" color="inkMuted" style={styles.regular}>
+          {when}
+        </Text>
       </View>
-      <Text size={15} style={styles.transactionLabel} numberOfLines={1}>
-        {transactionLabel(t, transaction)}
-      </Text>
-      <Text weight="bold" size={15} color={isCredit ? colors.orange : colors.text}>
-        {isCredit ? '+' : '−'}
-        {Math.abs(transaction.amount).toFixed(2)} {t('common.tnd')}
+      <Text variant="price" color={credit ? 'success' : 'ink'}>
+        {formatSignedMoney(transaction.amount)}
       </Text>
     </View>
   );
 }
 
-/** The teal inline actions the frame uses instead of buttons. */
-function LinkText({
-  label,
-  onPress,
-  weight = 'regular',
-  style,
-}: {
-  label: string;
-  onPress: () => void;
-  weight?: 'regular' | 'semibold';
-  style?: object;
-}) {
-  const colors = useColors();
-  const styles = useStyles();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={onPress}
-      hitSlop={8}
-      style={({ pressed }) => [pressed && styles.pressed, style]}>
-      <Text weight={weight} size={17} color={colors.teal}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-const useStyles = makeStyles((c) => ({
-  balanceHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+const useStyles = makeStyles((c, t) => ({
+  flex: {
+    flex: 1,
+    gap: 2,
   },
-  balanceBlock: {
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingTop: Spacing.three,
+  regular: {
+    fontFamily: t.typography.description.fontFamily,
   },
-  balanceRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+  balance: {
+    marginTop: 12,
+    padding: 20,
+    gap: 14,
   },
-  balanceCurrency: {
-    marginTop: Spacing.two,
-    marginLeft: Spacing.one,
+  balanceFigure: {
+    gap: 2,
   },
-  cashOut: {
-    alignSelf: 'stretch',
-    marginHorizontal: Spacing.six,
-    marginVertical: Spacing.three,
+  section: {
+    marginTop: 24,
+    marginBottom: 12,
   },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: c.border,
-    marginVertical: Spacing.five,
+  sectionLarge: {
+    marginTop: 28,
+    marginBottom: 12,
   },
   stats: {
     flexDirection: 'row',
-    paddingTop: Spacing.four,
   },
   stat: {
     flex: 1,
-    alignItems: 'center',
+    padding: 12,
     gap: 2,
   },
-  chartTitle: {
-    marginTop: Spacing.five,
+  statDivider: {
+    width: 1,
+    backgroundColor: c.divider,
   },
   chart: {
+    marginTop: 12,
+    gap: 8,
+  },
+  bars: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: Spacing.two,
-    marginTop: Spacing.four,
+    gap: 8,
   },
-  chartColumn: {
+  barColumn: {
     flex: 1,
     alignItems: 'center',
-    gap: Spacing.two,
-  },
-  chartTrack: {
-    height: CHART_HEIGHT,
     justifyContent: 'flex-end',
-    alignSelf: 'stretch',
+    gap: 6,
   },
   bar: {
-    borderRadius: Radius.sm,
+    alignSelf: 'stretch',
+    borderRadius: 8,
+    backgroundColor: c.chartBar,
   },
-  sectionHeader: {
+  barToday: {
+    backgroundColor: c.chartBarCurrent,
+  },
+  days: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 8,
+  },
+  day: {
+    flex: 1,
+  },
+  dayToday: {
+    fontFamily: t.typography.badge.fontFamily,
   },
   payout: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.three,
-    marginTop: Spacing.four,
-    padding: Spacing.three,
-    borderRadius: Radius.md,
-    backgroundColor: c.surface,
+    gap: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
-  payoutIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: Radius.sm,
-    backgroundColor: c.navy,
-    alignItems: 'center',
-    justifyContent: 'center',
+  cardDigits: {
+    letterSpacing: 1,
+  },
+  transactions: {
+    marginTop: 4,
   },
   transaction: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.three,
-    paddingVertical: Spacing.three,
-  },
-  transactionIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: Radius.sm,
-    backgroundColor: c.navy,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  transactionLabel: {
-    flex: 1,
-  },
-  viewAll: {
-    alignSelf: 'center',
-    paddingTop: Spacing.four,
-  },
-  pressed: {
-    opacity: 0.6,
+    gap: 14,
+    paddingVertical: 12,
   },
 }));

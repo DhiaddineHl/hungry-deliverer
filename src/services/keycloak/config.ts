@@ -1,4 +1,5 @@
-const KEYCLOAK_URL = process.env.EXPO_PUBLIC_KEYCLOAK_URL ?? 'http://172.29.80.1:8081';
+import { KEYCLOAK_URL } from '@/config/env';
+
 const REALM = process.env.EXPO_PUBLIC_KEYCLOAK_REALM ?? 'hungry';
 const CLIENT_ID = process.env.EXPO_PUBLIC_KEYCLOAK_CLIENT_ID ?? 'hungry-deliverer-app';
 

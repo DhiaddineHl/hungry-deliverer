@@ -1,15 +1,14 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
-import { Pressable, View, type ViewStyle } from 'react-native';
+import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
 
+import { Badge, IconWell } from '@/components/ui/content';
 import { Text } from '@/components/ui/text';
-import { Radius, Spacing } from '@/constants/theme';
+import { FieldMessage } from '@/components/ui/text-field';
 import { useLocale } from '@/contexts/locale-context';
-import { useColors } from '@/contexts/theme-context';
-import { makeStyles } from '@/hooks/use-themed-styles';
 import type { LocalFile } from '@/services/api/driver-request-service';
+import { Icon, makeStyles, type IconName } from '@/theme';
 
 /**
  * Phone cameras produce multi-megabyte JPEGs; this is plenty for a reviewer to
@@ -20,12 +19,9 @@ const QUALITY = 0.6;
 type Props = {
   label: string;
   hint?: string;
-  /** Shows an "Optional" tag; required documents show nothing. */
+  /** Shows an "Optional" badge; required documents show nothing. */
   optional?: boolean;
-  /**
-   * Camera only, front-facing — the live photo must be taken now, not picked
-   * from the gallery, which is the whole point of asking for one.
-   */
+  /** Camera only, front-facing — the live photo must be taken now. */
   liveOnly?: boolean;
   value: LocalFile | null;
   onChange: (file: LocalFile) => void;
@@ -34,12 +30,12 @@ type Props = {
   disabled?: boolean;
   /** Prefix of the generated file name when the picker gives none. */
   fileNamePrefix: string;
-  containerStyle?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 };
 
 /**
- * One verification document of the deliverer application: a thumbnail of the
- * picked image (or a placeholder) with the ways to provide it.
+ * One verification document of the rider application: a thumbnail of the
+ * picked image (or a neutral well) with the ways to provide it.
  */
 export function DocumentField({
   label,
@@ -51,10 +47,9 @@ export function DocumentField({
   error,
   disabled,
   fileNamePrefix,
-  containerStyle,
+  style,
 }: Props) {
   const { t } = useLocale();
-  const colors = useColors();
   const styles = useStyles();
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
@@ -96,79 +91,57 @@ export function DocumentField({
   const message = error ?? permissionError;
 
   return (
-    <View style={containerStyle}>
-      <View style={[styles.card, message && styles.cardError]}>
+    <View style={[styles.container, style]}>
+      <View style={[styles.card, message ? styles.cardError : null]}>
         {value ? (
           <Image source={{ uri: value.uri }} style={styles.thumb} contentFit="cover" />
         ) : (
-          <View style={[styles.thumb, styles.placeholder]}>
-            <Ionicons
-              name={liveOnly ? 'person-circle-outline' : 'document-text-outline'}
-              size={26}
-              color={colors.textSecondary}
-            />
-          </View>
+          <IconWell icon={liveOnly ? 'user' : 'terms'} size={56} radius={14} iconSize="field" />
         )}
 
         <View style={styles.body}>
           <View style={styles.titleRow}>
-            <Text weight="semibold" size={14} style={styles.title} numberOfLines={1}>
+            <Text variant="itemLabel" numberOfLines={1} style={styles.title}>
               {label}
             </Text>
-            {optional ? (
-              <Text size={12} color={colors.textMuted}>
-                {t('application.optional')}
-              </Text>
-            ) : null}
+            {optional ? <Badge label={t('application.optional')} tone="neutral" /> : null}
           </View>
           {hint ? (
-            <Text size={12} color={colors.textSecondary} numberOfLines={2}>
+            <Text variant="caption" color="inkMuted" numberOfLines={2}>
               {hint}
             </Text>
           ) : null}
-
           <View style={styles.actions}>
-            <ActionLink
-              icon="camera-outline"
+            <Action
+              icon="camera"
               label={value ? t('application.replace') : t('application.takePhoto')}
               onPress={takePhoto}
               disabled={disabled}
             />
             {liveOnly ? null : (
-              <ActionLink
-                icon="images-outline"
-                label={t('application.choosePhoto')}
-                onPress={choosePhoto}
-                disabled={disabled}
-              />
+              <Action icon="gallery" label={t('application.choosePhoto')} onPress={choosePhoto} disabled={disabled} />
             )}
           </View>
         </View>
 
-        {value ? <Ionicons name="checkmark-circle" size={22} color={colors.teal} /> : null}
+        {value ? <Icon name="success" color="success" /> : null}
       </View>
-
-      {message ? (
-        <Text size={13} color={colors.danger} style={styles.error}>
-          {message}
-        </Text>
-      ) : null}
+      {message ? <FieldMessage message={message} /> : null}
     </View>
   );
 }
 
-function ActionLink({
+function Action({
   icon,
   label,
   onPress,
   disabled,
 }: {
-  icon: React.ComponentProps<typeof Ionicons>['name'];
+  icon: IconName;
   label: string;
   onPress: () => void;
   disabled?: boolean;
 }) {
-  const colors = useColors();
   const styles = useStyles();
   return (
     <Pressable
@@ -177,26 +150,26 @@ function ActionLink({
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      hitSlop={6}
+      hitSlop={8}
       style={({ pressed }) => [styles.action, (pressed || disabled) && styles.pressed]}>
-      <Ionicons name={icon} size={16} color={colors.teal} />
-      <Text weight="semibold" size={13} color={colors.teal}>
-        {label}
-      </Text>
+      <Icon name={icon} size="small" />
+      <Text variant="link">{label}</Text>
     </Pressable>
   );
 }
 
-const useStyles = makeStyles((c) => ({
+const useStyles = makeStyles((c, t) => ({
+  container: {
+    gap: 6,
+  },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.three,
-    padding: Spacing.three,
-    borderRadius: Radius.md,
+    gap: 12,
+    padding: 12,
+    borderRadius: t.radius.thumb,
     borderWidth: 1,
-    borderColor: c.border,
-    backgroundColor: c.card,
+    borderColor: c.divider,
   },
   cardError: {
     borderColor: c.danger,
@@ -204,12 +177,7 @@ const useStyles = makeStyles((c) => ({
   thumb: {
     width: 56,
     height: 56,
-    borderRadius: Radius.md,
-  },
-  placeholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: c.surface,
+    borderRadius: t.radius.field,
   },
   body: {
     flex: 1,
@@ -218,7 +186,7 @@ const useStyles = makeStyles((c) => ({
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
+    gap: 8,
   },
   title: {
     flexShrink: 1,
@@ -226,8 +194,8 @@ const useStyles = makeStyles((c) => ({
   actions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: Spacing.four,
-    marginTop: Spacing.one,
+    gap: 16,
+    marginTop: 6,
   },
   action: {
     flexDirection: 'row',
@@ -236,8 +204,5 @@ const useStyles = makeStyles((c) => ({
   },
   pressed: {
     opacity: 0.5,
-  },
-  error: {
-    marginTop: Spacing.one,
   },
 }));

@@ -1,67 +1,44 @@
-import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, Pressable, View } from 'react-native';
+import { Pressable } from 'react-native';
 
-import { useLocale } from '@/contexts/locale-context';
-import { makeStyles } from '@/hooks/use-themed-styles';
-import { useColors } from '@/contexts/theme-context';
+import { Spinner } from '@/components/ui/spinner';
 import { Text } from '@/components/ui/text';
-import { Radius, Shadow, Spacing } from '@/constants/theme';
+import { useLocale } from '@/contexts/locale-context';
+import { Icon, makeStyles } from '@/theme';
 
-/** Navy "Navigate" pill that starts in-app turn-by-turn guidance for the leg. */
-export function NavigateButton({
-  onPress,
-  loading = false,
-}: {
-  onPress: () => void;
-  loading?: boolean;
-}) {
+/** 44 pt navy pill that starts in-app turn-by-turn guidance for the current leg. */
+export function NavigateButton({ onPress, loading = false }: { onPress: () => void; loading?: boolean }) {
   const { t } = useLocale();
-  const colors = useColors();
   const styles = useStyles();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={t('delivery.navigate')}
-      accessibilityState={{ disabled: loading }}
+      accessibilityState={{ disabled: loading, busy: loading }}
       disabled={loading}
       onPress={onPress}
-      style={({ pressed }) => [styles.button, pressed && styles.pressed]}>
-      <View style={styles.icon}>
-        {loading ? (
-          <ActivityIndicator size="small" color={colors.navy} />
-        ) : (
-          <Ionicons name="navigate" size={14} color={colors.navy} />
-        )}
-      </View>
-      <Text weight="semibold" size={16} color={colors.onNavy}>
+      style={({ pressed }) => [styles.pill, pressed && styles.pressed]}>
+      {loading ? <Spinner tone="onInk" /> : <Icon name="navigate" size="row" color="onInk" />}
+      <Text variant="pill" color="onInk">
         {loading ? t('delivery.starting') : t('delivery.navigate')}
       </Text>
     </Pressable>
   );
 }
 
-const useStyles = makeStyles((c) => ({
-  button: {
-    alignSelf: 'flex-start',
+const useStyles = makeStyles((c, t) => ({
+  pill: {
+    height: t.size.iconButton,
+    borderRadius: t.size.iconButton / 2,
+    backgroundColor: c.ink,
+    paddingLeft: 12,
+    paddingRight: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
-    backgroundColor: c.navy,
-    paddingLeft: Spacing.two,
-    paddingRight: Spacing.five,
-    paddingVertical: Spacing.two,
-    borderRadius: Radius.pill,
-    ...Shadow.pill,
-  },
-  icon: {
-    width: 30,
-    height: 30,
-    borderRadius: Radius.pill,
-    backgroundColor: c.card,
-    alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
+    ...t.shadow.floatingButton,
   },
   pressed: {
-    opacity: 0.85,
+    opacity: t.opacity.pressed,
+    transform: [{ scale: t.motion.pressScale }],
   },
 }));

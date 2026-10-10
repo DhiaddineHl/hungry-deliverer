@@ -1,69 +1,49 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Controller, type Control, type FieldValues, type Path } from 'react-hook-form';
-import { Pressable, View, type ViewStyle } from 'react-native';
+import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { translateFieldError } from '@/features/auth/field-error';
-import { useLocale } from '@/contexts/locale-context';
-import { makeStyles } from '@/hooks/use-themed-styles';
-import { useColors } from '@/contexts/theme-context';
 import { Text } from '@/components/ui/text';
-import { Radius, Spacing } from '@/constants/theme';
+import { FieldMessage } from '@/components/ui/text-field';
+import { useLocale } from '@/contexts/locale-context';
+import { translateFieldError } from '@/features/auth/field-error';
 import { REGISTRABLE_VEHICLE_TYPES } from '@/features/auth/schemas';
+import type { TranslationKey } from '@/i18n';
+import { Icon, makeStyles, type IconName } from '@/theme';
 
 type RegistrableVehicleType = (typeof REGISTRABLE_VEHICLE_TYPES)[number];
 
-type Option = {
-  label: string;
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-};
-
 /**
- * How each registrable class is presented. Keyed by the class rather than
- * listed, so the record is exhaustive by construction: adding a class to
+ * How each registrable class is presented. Keyed by class, so adding one to
  * REGISTRABLE_VEHICLE_TYPES without a tile here is a type error, not a tile
- * that silently goes missing at runtime.
+ * that silently goes missing.
  */
-const OPTIONS: Record<RegistrableVehicleType, Option> = {
-  MOTORCYCLE: { label: 'Motorcycle', icon: 'speedometer-outline' },
-  SCOOTER: { label: 'Scooter', icon: 'flash-outline' },
-  CAR: { label: 'Car', icon: 'car-outline' },
+const OPTIONS: Record<RegistrableVehicleType, { label: TranslationKey; icon: IconName }> = {
+  MOTORCYCLE: { label: 'application.vehicleMotorcycle', icon: 'vehicleMotorcycle' },
+  SCOOTER: { label: 'application.vehicleScooter', icon: 'vehicleScooter' },
+  CAR: { label: 'application.vehicleCar', icon: 'vehicleCar' },
 };
 
 type Props<T extends FieldValues> = {
   control: Control<T>;
   name: Path<T>;
-  label?: string;
-  containerStyle?: ViewStyle;
+  disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
 };
 
 /**
- * Vehicle class picker for the sign-up form. The chosen class is what the
- * backend uses to create the deliverer's vehicle and to grant the matching
- * VEHICLE_<CLASS> realm role, so it is a required registration field.
- *
- * It offers the classes in `REGISTRABLE_VEHICLE_TYPES` — a subset of what the
- * backend accepts. The sign-up schema enforces the same list, so a class that
- * is not shown here cannot be submitted either.
+ * VehicleTile row (A2): three across. At rest a muted tile with a white well;
+ * selected, a white tile with a navy border and a navy well. The chosen class
+ * becomes the rider's Vehicle and their VEHICLE_<CLASS> role, so it is required.
  */
-export function VehicleClassField<T extends FieldValues>({
-  control,
-  name,
-  label = 'How do you deliver?',
-  containerStyle,
-}: Props<T>) {
+export function VehicleClassField<T extends FieldValues>({ control, name, disabled, style }: Props<T>) {
   const { t } = useLocale();
-  const colors = useColors();
   const styles = useStyles();
   return (
     <Controller
       control={control}
       name={name}
       render={({ field: { value, onChange }, fieldState: { error } }) => (
-        <View style={containerStyle}>
-          <Text weight="semibold" size={15} style={styles.label}>
-            {label}
-          </Text>
-          <View style={styles.grid}>
+        <View style={[styles.container, disabled && styles.locked, style]}>
+          <View style={styles.row} accessibilityRole="radiogroup">
             {REGISTRABLE_VEHICLE_TYPES.map((vehicleType) => {
               const option = OPTIONS[vehicleType];
               const selected = value === vehicleType;
@@ -71,63 +51,64 @@ export function VehicleClassField<T extends FieldValues>({
                 <Pressable
                   key={vehicleType}
                   accessibilityRole="radio"
-                  accessibilityState={{ selected }}
-                  accessibilityLabel={option.label}
+                  accessibilityState={{ selected, disabled }}
+                  accessibilityLabel={t(option.label)}
+                  disabled={disabled}
                   onPress={() => onChange(vehicleType)}
-                  style={[styles.tile, selected && styles.tileSelected]}>
-                  <Ionicons
-                    name={option.icon}
-                    size={22}
-                    color={selected ? colors.orange : colors.textSecondary}
-                  />
-                  <Text
-                    weight={selected ? 'semibold' : 'regular'}
-                    size={13}
-                    color={selected ? colors.text : colors.textSecondary}>
-                    {option.label}
-                  </Text>
+                  style={[styles.tile, selected && styles.tileSelected, error && !value && styles.tileError]}>
+                  <View style={[styles.well, selected && styles.wellSelected]}>
+                    <Icon name={option.icon} color={selected ? 'onInk' : 'ink'} />
+                  </View>
+                  <Text variant="chip">{t(option.label)}</Text>
                 </Pressable>
               );
             })}
           </View>
-          {error ? (
-            <Text size={13} color={colors.danger} style={styles.error}>
-              {translateFieldError(t, error.message)}
-            </Text>
-          ) : null}
+          {error ? <FieldMessage message={translateFieldError(t, error.message)} /> : null}
         </View>
       )}
     />
   );
 }
 
-const useStyles = makeStyles((c) => ({
-  label: {
-    marginBottom: Spacing.two,
+const useStyles = makeStyles((c, t) => ({
+  container: {
+    gap: 6,
   },
-  grid: {
+  locked: {
+    opacity: t.opacity.lockedInput,
+  },
+  row: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.three,
+    gap: 10,
   },
   tile: {
-    // Three per row, accounting for the two gaps between them.
-    flexBasis: '30%',
-    flexGrow: 1,
+    flex: 1,
+    height: t.size.vehicleTile,
+    borderRadius: t.radius.thumb,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    backgroundColor: c.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.one,
-    paddingVertical: Spacing.three,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: c.border,
-    backgroundColor: c.card,
+    gap: 8,
   },
   tileSelected: {
-    borderColor: c.orange,
-    backgroundColor: c.orangeSoft,
+    backgroundColor: c.surface,
+    borderColor: c.ink,
   },
-  error: {
-    marginTop: Spacing.one,
+  tileError: {
+    borderColor: c.danger,
+  },
+  well: {
+    width: t.size.iconWell,
+    height: t.size.iconWell,
+    borderRadius: t.radius.control,
+    backgroundColor: c.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wellSelected: {
+    backgroundColor: c.ink,
   },
 }));

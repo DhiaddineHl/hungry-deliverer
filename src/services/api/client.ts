@@ -1,5 +1,6 @@
 import axios, { type AxiosError } from 'axios';
 
+import { API_URL } from '@/config/env';
 import { isTokenExpired, refreshAccessToken } from '@/services/keycloak/auth-service';
 import { getTokens } from '@/services/keycloak/token-storage';
 
@@ -14,7 +15,7 @@ import { getTokens } from '@/services/keycloak/token-storage';
  */
 // eslint-disable-next-line import/no-named-as-default-member -- axios.create is the documented entry point
 export const apiClient = axios.create({
-  baseURL: process.env.EXPO_PUBLIC_API_URL ?? 'http://172.29.80.1:8080',
+  baseURL: API_URL,
   // Same rationale as the keycloak service's fetchWithTimeout: RN networking
   // has no default deadline and an unreachable LAN host would hang forever.
   timeout: 15000,
@@ -61,6 +62,12 @@ apiClient.interceptors.response.use(
   (error: AxiosError<Record<string, unknown>>) => {
     if (error.response) {
       const data = error.response.data;
+      // A server fault's body is for the logs, not the rider: it can carry
+      // stack traces, SQL or internal hostnames. Only 4xx details — validation
+      // messages written for the user — are passed through.
+      if (error.response.status >= 500) {
+        throw new ApiError('The service is unavailable right now. Try again shortly.', error.response.status);
+      }
       const message =
         (typeof data?.detail === 'string' && data.detail) || // Spring ProblemDetail
         (typeof data?.message === 'string' && data.message) ||

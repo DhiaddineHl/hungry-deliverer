@@ -26,13 +26,13 @@ export function usePushNotifications(): void {
       if (cancelled) return;
       switch (result.status) {
         case 'registered':
-          console.log('[Push] Device registered for assignment notifications');
+          if (__DEV__) console.log('[Push] Device registered for assignment notifications');
           break;
         case 'denied':
-          console.log('[Push] Notifications were declined — assignments will only arrive live in-app');
+          if (__DEV__) console.log('[Push] Notifications were declined — assignments will only arrive live in-app');
           break;
         default:
-          console.warn(`[Push] Not registered: ${result.reason}`);
+          if (__DEV__) console.warn(`[Push] Not registered: ${result.reason}`);
       }
     });
 

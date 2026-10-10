@@ -1,12 +1,10 @@
-import type { Ionicons } from '@expo/vector-icons';
-
-import type { Tint } from '@/constants/theme';
 import type { TranslationKey } from '@/i18n';
+import type { IconName } from '@/theme';
 
 /**
  * Help-centre copy. Static by design: these answers are the same for every
- * deliverer and change with an app release, so there is no endpoint behind
- * them — the search box and the category chips filter this list in place.
+ * rider and change with an app release, so there is no endpoint behind them —
+ * the search field and the topic chips filter this list in place.
  */
 
 export type FaqTopic = 'guide' | 'policy' | 'tax';
@@ -21,33 +19,24 @@ export type FaqCategory = {
   /** Also the catalogue key for the category's title (`faqs.<id>`). */
   id: 'gettingStarted' | 'earnings' | 'safety' | 'appSupport';
   topic: FaqTopic;
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  /**
-   * Which tinted square sits behind the icon. A palette name rather than a
-   * colour: the frame's pastels are a light-mode idea, and the theme owns what
-   * each tint becomes after dark (see `Tint` in constants/theme).
-   */
-  tint: Tint;
+  icon: IconName;
+  /** Getting started is the one category with an orange-soft well. */
+  highlighted?: boolean;
   entries: FaqEntry[];
 };
 
-export const FAQ_TOPICS: {
-  id: FaqTopic;
-  /** Catalogue key for the chip's label. */
-  label: TranslationKey;
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-}[] = [
-  { id: 'guide', label: 'faqs.topicGuide', icon: 'flash-outline' },
-  { id: 'policy', label: 'faqs.topicPolicy', icon: 'shield-checkmark-outline' },
-  { id: 'tax', label: 'faqs.topicTax', icon: 'card-outline' },
+export const FAQ_TOPICS: { id: FaqTopic; label: TranslationKey; icon: IconName }[] = [
+  { id: 'guide', label: 'faqs.topicGuide', icon: 'quickGuide' },
+  { id: 'policy', label: 'faqs.topicPolicy', icon: 'rules' },
+  { id: 'tax', label: 'faqs.topicTax', icon: 'earnings' },
 ];
 
 export const FAQ_CATEGORIES: FaqCategory[] = [
   {
     id: 'gettingStarted',
     topic: 'guide',
-    icon: 'rocket-outline',
-    tint: 'warm',
+    icon: 'gettingStarted',
+    highlighted: true,
     entries: [
       { question: 'faqContent.goOnlineQ', answer: 'faqContent.goOnlineA' },
       { question: 'faqContent.noOffersQ', answer: 'faqContent.noOffersA' },
@@ -55,34 +44,34 @@ export const FAQ_CATEGORIES: FaqCategory[] = [
     ],
   },
   {
-    id: 'earnings',
-    topic: 'tax',
-    icon: 'cash-outline',
-    tint: 'teal',
+    id: 'appSupport',
+    topic: 'guide',
+    icon: 'smartphone',
     entries: [
-      { question: 'faqContent.cashOutQ', answer: 'faqContent.cashOutA' },
-      { question: 'faqContent.feeQ', answer: 'faqContent.feeA' },
-      { question: 'faqContent.taxesQ', answer: 'faqContent.taxesA' },
+      { question: 'faqContent.mapQ', answer: 'faqContent.mapA' },
+      { question: 'faqContent.loggedOutQ', answer: 'faqContent.loggedOutA' },
     ],
   },
   {
     id: 'safety',
     topic: 'policy',
-    icon: 'shield-outline',
-    tint: 'red',
+    icon: 'rules',
     entries: [
       { question: 'faqContent.accidentQ', answer: 'faqContent.accidentA' },
       { question: 'faqContent.coverQ', answer: 'faqContent.coverA' },
     ],
   },
   {
-    id: 'appSupport',
-    topic: 'guide',
-    icon: 'phone-portrait-outline',
-    tint: 'blue',
+    id: 'earnings',
+    topic: 'tax',
+    icon: 'earnings',
     entries: [
-      { question: 'faqContent.mapQ', answer: 'faqContent.mapA' },
-      { question: 'faqContent.loggedOutQ', answer: 'faqContent.loggedOutA' },
+      { question: 'faqContent.cashOutQ', answer: 'faqContent.cashOutA' },
+      { question: 'faqContent.feeQ', answer: 'faqContent.feeA' },
+      { question: 'faqContent.taxesQ', answer: 'faqContent.taxesA' },
     ],
   },
 ];
+
+/** The support line the Help screen and the in-trip help button call. */
+export const SUPPORT_PHONE = '+21671000000';

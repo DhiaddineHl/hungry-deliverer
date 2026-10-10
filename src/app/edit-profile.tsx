@@ -1,31 +1,31 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useForm } from 'react-hook-form';
-import { ActivityIndicator, View } from 'react-native';
+import { useForm, type FieldValues } from 'react-hook-form';
+import { View } from 'react-native';
 
-import { useLocale } from '@/contexts/locale-context';
-import { makeStyles } from '@/hooks/use-themed-styles';
-import { useColors } from '@/contexts/theme-context';
-import { TextField } from '@/components/auth/text-field';
-import { PageShell } from '@/components/ui/page-shell';
-import { PrimaryButton } from '@/components/ui/primary-button';
+import { PrimaryButton } from '@/components/ui/button';
+import { ErrorBanner, Skeleton, StateView } from '@/components/ui/feedback';
+import { Page } from '@/components/ui/page';
 import { Text } from '@/components/ui/text';
-import { Radius, Spacing } from '@/constants/theme';
+import { FormTextField } from '@/components/ui/text-field';
+import { useToast } from '@/components/ui/toast';
 import { useAuth } from '@/contexts/auth-context';
+import { useLocale } from '@/contexts/locale-context';
 import {
   isProfileField,
   profileEmailSchema,
   profileNameSchema,
   profilePhoneSchema,
   type ProfileEmailValues,
-  type ProfileNameValues,
   type ProfileField,
+  type ProfileNameValues,
   type ProfilePhoneValues,
 } from '@/features/profile/schemas';
 import { useUpdateProfile } from '@/features/profile/use-update-profile';
 import { useDriver } from '@/hooks/use-driver';
 import type { TranslationKey } from '@/i18n';
 import type { Driver } from '@/services/api/types';
+import { makeStyles } from '@/theme';
 
 const TITLES: Record<ProfileField, TranslationKey> = {
   name: 'editProfile.nameTitle',
@@ -34,229 +34,213 @@ const TITLES: Record<ProfileField, TranslationKey> = {
 };
 
 /**
- * Edits one field of the deliverer's profile and writes it through
- * `PUT /drivers`, which mirrors the change onto the Keycloak account.
+ * Edits one field of the rider's profile and writes it through `PUT /drivers`,
+ * which mirrors the change onto the Keycloak account.
  *
  * One field per visit, on purpose: the backend replaces `contact` and
- * `fullname` wholesale, so every save has to rebuild them from the current
- * record (see `features/profile/profile-input.ts`). Editing one thing at a time
- * keeps that rebuild honest — there is never a second edited field in flight
- * whose value would have to be guessed.
+ * `fullname` wholesale, so every save rebuilds them from the current record
+ * (see `features/profile/profile-input.ts`). Editing one thing at a time keeps
+ * that rebuild honest.
  */
 export default function EditProfileScreen() {
   const { t } = useLocale();
-  const colors = useColors();
   const styles = useStyles();
   const router = useRouter();
   const params = useLocalSearchParams<{ field?: string }>();
   const { user } = useAuth();
   const { data: driver, isLoading } = useDriver(user?.sub);
-
   const field = isProfileField(params.field) ? params.field : 'name';
+  const title = t(TITLES[field]);
 
   if (isLoading || driver === undefined) {
     return (
-      <PageShell title={t(TITLES[field])}>
-        <ActivityIndicator color={colors.orange} style={styles.loader} />
-      </PageShell>
+      <Page title={title}>
+        <View style={styles.skeleton}>
+          <Skeleton width="80%" height={14} />
+          <Skeleton width={80} height={12} style={styles.skeletonLabel} />
+          <Skeleton height={52} radius={14} />
+        </View>
+      </Page>
     );
   }
 
   // No driver record behind the account (a brokered sign-in whose
-  // `POST /drivers/me` never completed). There is nothing to update by code,
-  // so the editor says so rather than failing on save.
+  // `POST /drivers/me` never completed): nothing to update by code.
   if (!driver) {
     return (
-      <PageShell title={t(TITLES[field])}>
-        <Text weight="bold" size={20}>
-          {t('editProfile.unavailableTitle')}
-        </Text>
-        <Text size={15} color={colors.textSecondary} style={styles.emptyBody}>
-          {t('editProfile.unavailableBody')}
-        </Text>
-      </PageShell>
+      <Page title={title}>
+        <StateView
+          icon="user"
+          title={t('editProfile.unavailableTitle')}
+          body={t('editProfile.unavailableBody')}
+          style={styles.unavailable}
+        />
+      </Page>
     );
   }
 
-  return (
-    <PageShell title={t(TITLES[field])}>
-      {field === 'name' ? <NameForm driver={driver} onDone={router.back} /> : null}
-      {field === 'email' ? <EmailForm driver={driver} onDone={router.back} /> : null}
-      {field === 'phone' ? <PhoneForm driver={driver} onDone={router.back} /> : null}
-    </PageShell>
-  );
+  return <ProfileForm field={field} title={title} driver={driver} onDone={router.back} />;
 }
 
-type FormProps = {
-  driver: Driver;
-  onDone: () => void;
+type FormSpec = {
+  hint: TranslationKey;
+  defaults: (driver: Driver) => FieldValues;
+  schema: typeof profileNameSchema | typeof profileEmailSchema | typeof profilePhoneSchema;
 };
 
-function NameForm({ driver, onDone }: FormProps) {
-  const { t } = useLocale();
-  const styles = useStyles();
-  const { save, isSaving, error } = useUpdateProfile();
-  const { control, handleSubmit } = useForm<ProfileNameValues>({
-    resolver: zodResolver(profileNameSchema),
-    defaultValues: {
+const FORMS: Record<ProfileField, FormSpec> = {
+  name: {
+    hint: 'editProfile.nameHint',
+    schema: profileNameSchema,
+    defaults: (driver) => ({
       firstName: driver.fullname?.firstName ?? '',
       lastName: driver.fullname?.lastName ?? '',
-    },
-  });
+    }),
+  },
+  email: {
+    hint: 'editProfile.emailHint',
+    schema: profileEmailSchema,
+    defaults: (driver) => ({ email: driver.contact?.email ?? '' }),
+  },
+  phone: {
+    hint: 'editProfile.phoneHint',
+    schema: profilePhoneSchema,
+    defaults: (driver) => ({ phone: driver.contact?.phones?.[0] ?? '' }),
+  },
+};
 
-  const onSubmit = async (values: ProfileNameValues) => {
-    if (await save(driver, values)) onDone();
-  };
-
-  return (
-    <View>
-      <Hint>{t('editProfile.nameHint')}</Hint>
-      <ErrorBanner message={error} />
-      <TextField
-        control={control}
-        name="firstName"
-        label={t('auth.firstName')}
-        placeholder={t('auth.firstName')}
-        autoCapitalize="words"
-        autoComplete="given-name"
-        containerStyle={styles.field}
-      />
-      <TextField
-        control={control}
-        name="lastName"
-        label={t('auth.lastName')}
-        placeholder={t('auth.lastName')}
-        autoCapitalize="words"
-        autoComplete="family-name"
-        containerStyle={styles.field}
-      />
-      <SaveButton onPress={handleSubmit(onSubmit)} isSaving={isSaving} />
-    </View>
-  );
-}
-
-function EmailForm({ driver, onDone }: FormProps) {
+function ProfileForm({
+  field,
+  title,
+  driver,
+  onDone,
+}: {
+  field: ProfileField;
+  title: string;
+  driver: Driver;
+  onDone: () => void;
+}) {
   const { t } = useLocale();
   const styles = useStyles();
+  const showToast = useToast((state) => state.show);
   const { save, isSaving, error } = useUpdateProfile();
-  const { control, handleSubmit } = useForm<ProfileEmailValues>({
-    resolver: zodResolver(profileEmailSchema),
-    defaultValues: { email: driver.contact?.email ?? '' },
+  const spec = FORMS[field];
+  const {
+    control,
+    handleSubmit,
+    formState: { isDirty },
+  } = useForm<FieldValues>({
+    // The three schemas share nothing but their resolver shape.
+    resolver: zodResolver(spec.schema as typeof profileNameSchema),
+    defaultValues: spec.defaults(driver),
   });
 
-  const onSubmit = async (values: ProfileEmailValues) => {
-    if (await save(driver, values)) onDone();
+  const onSubmit = async (values: FieldValues) => {
+    const saved = await save(
+      driver,
+      values as ProfileNameValues | ProfileEmailValues | ProfilePhoneValues
+    );
+    if (saved) {
+      showToast(t('editProfile.saved'));
+      onDone();
+    }
   };
 
   return (
-    <View>
-      <Hint>{t('editProfile.emailHint')}</Hint>
-      <ErrorBanner message={error} />
-      <TextField
-        control={control}
-        name="email"
-        label={t('auth.email')}
-        placeholder={t('auth.email')}
-        keyboardType="email-address"
-        autoComplete="email"
-        textContentType="emailAddress"
-        containerStyle={styles.field}
-      />
-      <SaveButton onPress={handleSubmit(onSubmit)} isSaving={isSaving} />
-    </View>
-  );
-}
-
-function PhoneForm({ driver, onDone }: FormProps) {
-  const { t } = useLocale();
-  const styles = useStyles();
-  const { save, isSaving, error } = useUpdateProfile();
-  const { control, handleSubmit } = useForm<ProfilePhoneValues>({
-    resolver: zodResolver(profilePhoneSchema),
-    defaultValues: { phone: driver.contact?.phones?.[0] ?? '' },
-  });
-
-  const onSubmit = async (values: ProfilePhoneValues) => {
-    if (await save(driver, values)) onDone();
-  };
-
-  return (
-    <View>
-      <Hint>{t('editProfile.phoneHint')}</Hint>
-      <ErrorBanner message={error} />
-      <TextField
-        control={control}
-        name="phone"
-        label={t('settings.phoneNumber')}
-        placeholder={t('settings.phoneNumber')}
-        keyboardType="phone-pad"
-        autoComplete="tel"
-        textContentType="telephoneNumber"
-        containerStyle={styles.field}
-      />
-      <SaveButton onPress={handleSubmit(onSubmit)} isSaving={isSaving} />
-    </View>
-  );
-}
-
-function Hint({ children }: { children: string }) {
-  const colors = useColors();
-  const styles = useStyles();
-  return (
-    <Text size={15} color={colors.textSecondary} style={styles.hint}>
-      {children}
-    </Text>
-  );
-}
-
-function ErrorBanner({ message }: { message: string | null }) {
-  const colors = useColors();
-  const styles = useStyles();
-  if (!message) return null;
-  return (
-    <View style={styles.errorBanner}>
-      <Text size={14} color={colors.danger}>
-        {message}
+    <Page
+      title={title}
+      bottomBar={
+        <PrimaryButton
+          label={isSaving ? t('common.saving') : t('common.save')}
+          loading={isSaving}
+          // Nothing to save until something changed.
+          disabled={!isDirty}
+          onPress={handleSubmit(onSubmit)}
+          style={styles.flex}
+        />
+      }>
+      <Text variant="description" color="inkMuted" style={styles.hint}>
+        {t(spec.hint)}
       </Text>
-    </View>
+      {error ? <ErrorBanner message={error} style={styles.banner} /> : null}
+
+      {field === 'name' ? (
+        <View style={styles.columns}>
+          <FormTextField
+            control={control}
+            name="firstName"
+            label={t('auth.firstName')}
+            placeholder={t('auth.firstName')}
+            autoCapitalize="words"
+            autoComplete="given-name"
+            disabled={isSaving}
+            containerStyle={styles.flex}
+          />
+          <FormTextField
+            control={control}
+            name="lastName"
+            label={t('auth.lastName')}
+            placeholder={t('auth.lastName')}
+            autoCapitalize="words"
+            autoComplete="family-name"
+            disabled={isSaving}
+            containerStyle={styles.flex}
+          />
+        </View>
+      ) : null}
+
+      {field === 'email' ? (
+        <FormTextField
+          control={control}
+          name="email"
+          label={t('auth.email')}
+          placeholder={t('auth.emailPlaceholder')}
+          keyboardType="email-address"
+          autoComplete="email"
+          textContentType="emailAddress"
+          disabled={isSaving}
+        />
+      ) : null}
+
+      {field === 'phone' ? (
+        <FormTextField
+          control={control}
+          name="phone"
+          label={t('settings.phoneNumber')}
+          placeholder="+216 22 222 222"
+          keyboardType="phone-pad"
+          autoComplete="tel"
+          textContentType="telephoneNumber"
+          disabled={isSaving}
+        />
+      ) : null}
+    </Page>
   );
 }
 
-function SaveButton({ onPress, isSaving }: { onPress: () => void; isSaving: boolean }) {
-  const { t } = useLocale();
-  const styles = useStyles();
-  return (
-    <PrimaryButton
-      label={isSaving ? t('common.saving') : t('common.save')}
-      onPress={onPress}
-      disabled={isSaving}
-      style={styles.save}
-    />
-  );
-}
-
-const useStyles = makeStyles((c) => ({
-  loader: {
-    marginTop: Spacing.six,
+const useStyles = makeStyles(() => ({
+  flex: {
+    flex: 1,
   },
   hint: {
-    marginBottom: Spacing.five,
-    lineHeight: 21,
+    marginTop: 12,
+    marginBottom: 24,
   },
-  field: {
-    marginBottom: Spacing.five,
+  banner: {
+    marginBottom: 20,
   },
-  save: {
-    marginTop: Spacing.two,
+  columns: {
+    flexDirection: 'row',
+    gap: 12,
   },
-  errorBanner: {
-    padding: Spacing.three,
-    marginBottom: Spacing.four,
-    borderRadius: Radius.md,
-    backgroundColor: c.dangerSoft,
+  skeleton: {
+    marginTop: 12,
+    gap: 10,
   },
-  emptyBody: {
-    marginTop: Spacing.two,
-    lineHeight: 21,
+  skeletonLabel: {
+    marginTop: 14,
+  },
+  unavailable: {
+    marginTop: 48,
   },
 }));

@@ -1,59 +1,70 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, { SlideInLeft } from 'react-native-reanimated';
+import Animated, { FadeIn, SlideInLeft } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useLocale } from '@/contexts/locale-context';
-import { makeStyles } from '@/hooks/use-themed-styles';
-import { useColors } from '@/contexts/theme-context';
+import { useVehicleLabel } from '@/components/sheets/session-sheets';
+import { Avatar, IconWell, StatusDot } from '@/components/ui/content';
 import { Text } from '@/components/ui/text';
-import { Radius, Spacing } from '@/constants/theme';
+import { useToast } from '@/components/ui/toast';
 import { useAuth } from '@/contexts/auth-context';
+import { useLocale } from '@/contexts/locale-context';
+import { TODAY_SUMMARY } from '@/data/earnings';
+import { formatMoney, initialsOf } from '@/features/format';
 import { useSession } from '@/features/session/session-context';
 import { useDriver } from '@/hooks/use-driver';
 import type { TranslationKey } from '@/i18n';
+import { Icon, makeStyles, type IconName } from '@/theme';
 
 type Entry = {
-  icon: React.ComponentProps<typeof Ionicons>['name'];
+  icon: IconName;
   label: TranslationKey;
   /** Destination, or undefined for an entry with no screen behind it yet. */
   href?: '/wallet' | '/delivery-history' | '/faqs' | '/settings';
 };
 
 const ENTRIES: Entry[] = [
-  { icon: 'wallet-outline', label: 'menu.earnings', href: '/wallet' },
-  { icon: 'receipt-outline', label: 'menu.orderHistory', href: '/delivery-history' },
-  { icon: 'calendar-outline', label: 'menu.shifts' },
-  { icon: 'help-buoy-outline', label: 'menu.support', href: '/faqs' },
-  { icon: 'settings-outline', label: 'menu.settings', href: '/settings' },
+  { icon: 'earnings', label: 'menu.earnings', href: '/wallet' },
+  { icon: 'history', label: 'menu.history', href: '/delivery-history' },
+  { icon: 'shifts', label: 'menu.shifts' },
+  { icon: 'support', label: 'menu.help', href: '/faqs' },
+  { icon: 'settings', label: 'menu.settings', href: '/settings' },
 ];
 
 /**
- * Side drawer behind the hamburger.
+ * D10 — the drawer behind the menu button: who is riding, today's tally, the
+ * five destinations and Log out pinned to the bottom.
  *
  * Entries `replace` rather than `push`: the drawer is a transparent modal over
- * the map, so pushing would leave it sitting behind the page it opened and
- * "back" would land on the drawer again instead of the map.
+ * the map, so pushing would leave it behind the page it opened and "back"
+ * would land on the drawer again instead of the map.
  */
 export default function MenuScreen() {
   const { t } = useLocale();
-  const colors = useColors();
   const styles = useStyles();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const showToast = useToast((state) => state.show);
   const { phase, actions } = useSession();
   const { user, logout } = useAuth();
-  // Falls back to the token claims while the backend record loads, and stays
-  // on them for an account that has no driver record yet (social sign-in).
+  // Token claims stand in while the backend record loads.
   const { data: driver } = useDriver(user?.sub);
+  const vehicleLabel = useVehicleLabel(driver?.vehicle);
 
-  const displayName = driver?.name ?? user?.name ?? user?.preferred_username ?? t('menu.deliverer');
-  const vehicleClass = driver?.vehicle?.type;
+  const fullName = driver?.fullname
+    ? `${driver.fullname.firstName ?? ''} ${driver.fullname.lastName ?? ''}`.trim()
+    : '';
+  const displayName = fullName || driver?.name || user?.name || user?.preferred_username || t('menu.deliverer');
+  const online = phase !== 'offline';
+  const vehicleName = vehicleLabel?.split(' · ')[0];
 
-  const goOffline = () => {
-    actions.stopSession();
-    router.back();
+  const open = (entry: Entry) => {
+    if (entry.href) {
+      router.replace(entry.href);
+    } else {
+      router.back();
+      showToast(t('menu.shiftsSoon'));
+    }
   };
 
   const signOut = async () => {
@@ -62,30 +73,51 @@ export default function MenuScreen() {
     router.replace('/');
   };
 
+  const trips = TODAY_SUMMARY.trips;
+
   return (
     <View style={styles.screen}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t('menu.closeMenu')}
-        style={styles.backdrop}
-        onPress={() => router.back()}
-      />
+      <Animated.View entering={FadeIn.duration(200)} style={styles.scrim}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('menu.closeMenu')}
+          style={StyleSheet.absoluteFill}
+          onPress={() => router.back()}
+        />
+      </Animated.View>
 
       <Animated.View
         entering={SlideInLeft.duration(240)}
-        style={[styles.drawer, { paddingTop: insets.top + Spacing.five }]}>
-        <View style={styles.profile}>
-          <View style={styles.avatar}>
-            <Ionicons name="person" size={26} color={colors.onNavy} />
-          </View>
-          <View style={styles.profileText}>
-            <Text weight="bold" size={18} numberOfLines={1}>
+        style={[styles.drawer, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 8 }]}
+        accessibilityViewIsModal>
+        <View style={styles.header}>
+          <Avatar initials={initialsOf(displayName)} />
+          <View style={styles.headerText}>
+            <Text variant="contactName" numberOfLines={1}>
               {displayName}
             </Text>
-            <Text size={14} color={colors.textSecondary}>
-              {phase === 'offline' ? t('menu.offline') : t('menu.onShift')}
-              {vehicleClass ? ` · ${vehicleClass.toLowerCase()}` : ''}
+            <View style={styles.statusLine}>
+              <StatusDot color={online ? 'success' : 'inkSubtle'} />
+              <Text variant="meta" color="inkMuted" numberOfLines={1} style={styles.regular}>
+                {online ? t('menu.online') : t('menu.offline')}
+                {vehicleName ? ` · ${vehicleName}` : ''}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.today}>
+          <View style={styles.todayCell}>
+            <Text variant="caption" color="inkMuted" style={styles.regular}>
+              {t('menu.today')}
             </Text>
+            <Text variant="amount">{formatMoney(TODAY_SUMMARY.earned.amount)}</Text>
+          </View>
+          <View style={[styles.todayCell, styles.todayRight]}>
+            <Text variant="caption" color="inkMuted" style={styles.regular}>
+              {t('menu.trips')}
+            </Text>
+            <Text variant="amount">{trips}</Text>
           </View>
         </View>
 
@@ -94,32 +126,23 @@ export default function MenuScreen() {
             <Pressable
               key={entry.label}
               accessibilityRole="button"
-              onPress={() => (entry.href ? router.replace(entry.href) : router.back())}
+              onPress={() => open(entry)}
               style={({ pressed }) => [styles.entry, pressed && styles.pressed]}>
-              <Ionicons name={entry.icon} size={22} color={colors.navy} />
-              <Text size={16}>{t(entry.label)}</Text>
+              <IconWell icon={entry.icon} />
+              <Text variant="itemLabel" style={styles.entryLabel}>
+                {t(entry.label)}
+              </Text>
+              <Icon name="chevronRight" size="row" color="inkMuted" />
             </Pressable>
           ))}
         </View>
 
-        {phase !== 'offline' ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={goOffline}
-            style={({ pressed }) => [styles.entry, pressed && styles.pressed]}>
-            <Ionicons name="power" size={22} color={colors.danger} />
-            <Text size={16} color={colors.danger}>
-              {t('menu.goOffline')}
-            </Text>
-          </Pressable>
-        ) : null}
-
         <Pressable
           accessibilityRole="button"
           onPress={signOut}
-          style={({ pressed }) => [styles.entry, pressed && styles.pressed]}>
-          <Ionicons name="log-out-outline" size={22} color={colors.danger} />
-          <Text size={16} color={colors.danger}>
+          style={({ pressed }) => [styles.entry, styles.logout, pressed && styles.pressed]}>
+          <IconWell icon="logout" tone="danger" />
+          <Text variant="itemLabel" color="danger">
             {t('menu.logOut')}
           </Text>
         </Pressable>
@@ -128,54 +151,77 @@ export default function MenuScreen() {
   );
 }
 
-const useStyles = makeStyles((c) => ({
+const useStyles = makeStyles((c, t) => ({
   screen: {
     flex: 1,
     flexDirection: 'row',
   },
-  backdrop: {
+  scrim: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: c.scrim,
+    backgroundColor: c.drawerScrim,
   },
   drawer: {
-    width: '78%',
-    maxWidth: 320,
-    backgroundColor: c.card,
-    borderTopRightRadius: Radius.lg,
-    borderBottomRightRadius: Radius.lg,
-    paddingHorizontal: Spacing.five,
-    paddingBottom: Spacing.five,
+    width: t.size.drawerWidth,
+    maxWidth: '86%',
+    backgroundColor: c.surface,
+    borderTopRightRadius: t.radius.sheet,
+    borderBottomRightRadius: t.radius.sheet,
   },
-  profile: {
+  regular: {
+    fontFamily: t.typography.description.fontFamily,
+  },
+  header: {
+    marginHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: Spacing.five,
+    gap: 14,
   },
-  profileText: {
+  headerText: {
     flex: 1,
+    gap: 4,
   },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: Radius.pill,
-    backgroundColor: c.navy,
+  statusLine: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 6,
+  },
+  today: {
+    marginTop: 20,
+    marginHorizontal: 20,
+    borderRadius: t.radius.thumb,
+    backgroundColor: c.surfaceMuted,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  todayCell: {
+    gap: 2,
+  },
+  todayRight: {
+    alignItems: 'flex-end',
   },
   entries: {
     flex: 1,
-    borderTopWidth: 1,
-    borderTopColor: c.border,
-    paddingTop: Spacing.three,
+    marginTop: 16,
+    marginHorizontal: 8,
   },
   entry: {
+    height: t.size.drawerRow,
+    paddingHorizontal: 12,
+    borderRadius: t.radius.field,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.four,
-    paddingVertical: Spacing.four,
+    gap: 14,
+  },
+  entryLabel: {
+    flex: 1,
+  },
+  logout: {
+    marginHorizontal: 8,
   },
   pressed: {
-    opacity: 0.6,
+    backgroundColor: c.surfaceMuted,
   },
 }));

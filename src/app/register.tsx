@@ -1,36 +1,20 @@
-import { Ionicons } from '@expo/vector-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Controller, useForm, useWatch } from 'react-hook-form';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  TextInput,
-  View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { useForm, useWatch } from 'react-hook-form';
+import { BackHandler, View } from 'react-native';
 
-import { translateFieldError } from '@/features/auth/field-error';
-import { useLocale } from '@/contexts/locale-context';
-import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
-import { makeStyles } from '@/hooks/use-themed-styles';
-import { useColors } from '@/contexts/theme-context';
-import { AuthBackdrop } from '@/components/auth/auth-backdrop';
-import { IdentityRow, TermsFooter } from '@/components/auth/auth-common';
+import { AuthHeading, EmailChip, TermsFooter } from '@/components/auth/auth-common';
+import { AuthLayout } from '@/components/auth/auth-layout';
 import { DocumentField } from '@/components/auth/document-field';
-import { TextField } from '@/components/auth/text-field';
 import { VehicleClassField } from '@/components/auth/vehicle-class-field';
-import { PrimaryButton } from '@/components/ui/primary-button';
+import { PrimaryButton } from '@/components/ui/button';
+import { ErrorBanner, InfoNote, StateView } from '@/components/ui/feedback';
+import { COUNTRY_CODE, PhoneField } from '@/components/ui/phone-field';
 import { Text } from '@/components/ui/text';
-import { Fonts, Radius, Shadow, Spacing } from '@/constants/theme';
-import {
-  MOTORIZED_VEHICLES,
-  applicationSchema,
-  type ApplicationValues,
-} from '@/features/auth/schemas';
+import { FormTextField } from '@/components/ui/text-field';
+import { useLocale } from '@/contexts/locale-context';
+import { MOTORIZED_VEHICLES, applicationSchema, type ApplicationValues } from '@/features/auth/schemas';
 import type { TranslationKey } from '@/i18n';
 import {
   createDriverRequest,
@@ -42,18 +26,13 @@ import {
   REQUIRED_APPLICATION_DOCUMENTS,
   type ApplicationDocument,
 } from '@/services/api/types';
-
-/** Fixed until multi-country support lands; prefixed onto the phone number. */
-const COUNTRY_CODE = '+216';
+import { useApplicantStore } from '@/store/applicant-store';
+import { makeStyles } from '@/theme';
 
 type DocumentCopy = { label: TranslationKey; hint?: TranslationKey; liveOnly?: boolean };
 
 const DOCUMENT_COPY: Record<ApplicationDocument, DocumentCopy> = {
-  'live-photo': {
-    label: 'application.livePhoto',
-    hint: 'application.livePhotoHint',
-    liveOnly: true,
-  },
+  'live-photo': { label: 'application.livePhoto', hint: 'application.livePhotoHint', liveOnly: true },
   'id-card-front': { label: 'application.idCardFront' },
   'id-card-back': { label: 'application.idCardBack' },
   'vehicle-registration-card': { label: 'application.vehicleRegistration' },
@@ -66,35 +45,35 @@ const NO_DOCUMENTS: Record<ApplicationDocument, LocalFile | null> = {
   'vehicle-registration-card': null,
 };
 
+/** Fields validated before leaving step 1. */
+const STEP_ONE_FIELDS = ['firstName', 'lastName', 'phone'] as const;
+
 /**
- * The deliverer application, reached only from the identification screen for
- * an address with no account and no application under review (or whose last
- * application was declined — the reason then arrives as a route param).
+ * The rider application (A1/A2), reached only from identification for an
+ * address with no account and no application under review (or a declined one,
+ * whose reason arrives as a route param).
  *
- * Nothing here creates an account. Submitting files a `DriverRequest` and then
- * uploads its documents one by one; staff review it in the back-office, and
- * approving it is what creates the Driver and its Keycloak login. The
- * deliverer then comes back through identification and sets a password.
- *
- * Creation and the uploads are separate calls, so a failed upload leaves a
- * real application behind. The screen remembers its id and a retry only
- * re-sends what has not gone through yet, rather than filing a duplicate.
+ * Two steps on one screen: who you are, then how you deliver and your
+ * documents. Nothing here creates an account: submitting files a
+ * `DriverRequest` and uploads its documents one by one; staff review it and
+ * approving it creates the login. Creation and uploads are separate calls, so
+ * a failed upload leaves a real application behind — the screen remembers its
+ * id and a retry only re-sends what has not gone through.
  */
 export default function ApplicationScreen() {
   const { t } = useLocale();
-  const colors = useColors();
   const styles = useStyles();
   const router = useRouter();
-  const params = useLocalSearchParams<{
-    email?: string;
-    rejectionReason?: string;
-    reapply?: string;
-  }>();
+  const params = useLocalSearchParams<{ email?: string }>();
   const email = params.email ?? '';
-  const isReapplying = params.reapply === '1';
-  const rejectionReason = params.rejectionReason?.trim() || null;
-  const insets = useSafeAreaInsets();
+  // Never from route params (deep-linkable): only what the lookup recorded
+  // for this exact address.
+  const applicant = useApplicantStore();
+  const sameApplicant = !!email && applicant.email === email;
+  const isReapplying = sameApplicant && applicant.rejected;
+  const rejectionReason = sameApplicant ? applicant.rejectionReason : null;
 
+  const [step, setStep] = useState<1 | 2>(1);
   const [documents, setDocuments] = useState(NO_DOCUMENTS);
   const [showDocumentErrors, setShowDocumentErrors] = useState(false);
   const [requestId, setRequestId] = useState<string | null>(null);
@@ -102,10 +81,9 @@ export default function ApplicationScreen() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  // Set once the application and all its documents have gone through.
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  const { control, handleSubmit } = useForm<ApplicationValues>({
+  const { control, handleSubmit, trigger } = useForm<ApplicationValues>({
     resolver: zodResolver(applicationSchema),
     defaultValues: {
       firstName: '',
@@ -117,10 +95,28 @@ export default function ApplicationScreen() {
     },
   });
 
-  // A bicycle courier has neither a plate nor a driving licence, so those
-  // fields only appear (and are only required) for motorized classes.
+  // Plate and licence only matter for motorized classes.
   const vehicleType = useWatch({ control, name: 'vehicleType' });
   const needsPlate = MOTORIZED_VEHICLES.includes(vehicleType);
+
+  const goToIdentification = () => (router.canGoBack() ? router.back() : router.replace('/'));
+  const back = () => (step === 2 ? setStep(1) : goToIdentification());
+
+  // Android back on step 2 returns to step 1 rather than leaving the form.
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (step !== 2 || isSubmitting) return false;
+        setStep(1);
+        return true;
+      });
+      return () => subscription.remove();
+    }, [step, isSubmitting])
+  );
+
+  const continueToVehicle = async () => {
+    if (await trigger([...STEP_ONE_FIELDS])) setStep(2);
+  };
 
   const setDocument = (doc: ApplicationDocument, file: LocalFile) => {
     setDocuments((prev) => ({ ...prev, [doc]: file }));
@@ -141,16 +137,12 @@ export default function ApplicationScreen() {
     setIsSubmitting(true);
     let id = requestId;
     try {
-      // Only the first attempt files the application. Once it exists, a retry
-      // is about its documents alone — the fields are not re-sent (updating an
-      // application needs a staff token).
+      // Only the first attempt files the application; a retry is about its
+      // documents alone (updating an application needs a staff token).
       if (!id) {
         const created = await createDriverRequest({
           fullname: { firstName: values.firstName.trim(), lastName: values.lastName.trim() },
-          contact: {
-            email,
-            phones: [`${COUNTRY_CODE}${values.phone.replace(/\s/g, '')}`],
-          },
+          contact: { email, phones: [`${COUNTRY_CODE}${values.phone.replace(/\s/g, '')}`] },
           vehicleType: values.vehicleType,
           // Required by the backend; every class offered here is motorized.
           licensePlate: values.licensePlate?.trim() ?? '',
@@ -168,10 +160,8 @@ export default function ApplicationScreen() {
         done.add(doc);
         setUploaded(new Set(done));
       }
-
-      // Confirmed in place rather than on the status screen: the applicant has
-      // just applied, so a "check status" button has nothing to tell them yet.
       setIsSubmitted(true);
+      useApplicantStore.getState().clear();
     } catch (error) {
       const message = error instanceof Error ? error.message : t('auth.errorUnexpected');
       setSubmitError(id ? t('application.uploadFailed', { error: message }) : message);
@@ -181,62 +171,36 @@ export default function ApplicationScreen() {
     }
   };
 
-  // back(), not push('/'), so the stack doesn't grow when the deliverer
-  // ping-pongs between identification and this screen.
-  const goBackToIdentification = () => (router.canGoBack() ? router.back() : router.replace('/'));
+  // A step-one field can only fail here if it was edited back to invalid; the
+  // schema then sends the rider back to where the red field is.
+  const onInvalid = (errors: Partial<Record<keyof ApplicationValues, unknown>>) => {
+    setShowDocumentErrors(true);
+    if (STEP_ONE_FIELDS.some((field) => field in errors)) setStep(1);
+  };
 
   if (isSubmitted) {
     return (
-      <View style={styles.screen}>
-        <ThemedStatusBar surface="navy" />
-        <AuthBackdrop />
-        <View style={styles.cardWrap}>
-          <View style={styles.emptyState}>
-            <View style={styles.receivedBadge}>
-              <Ionicons name="checkmark-circle" size={40} color={colors.teal} />
-            </View>
-            <Text weight="bold" size={22} style={styles.centered}>
-              {t('application.receivedTitle')}
-            </Text>
-            <Text size={15} color={colors.textSecondary} style={styles.emptyBody}>
-              {t('application.receivedBody', { email })}
-            </Text>
-            <PrimaryButton
-              label={t('application.backToStart')}
-              // replace: the filed application is behind us and must not be
-              // reachable with the back gesture.
-              onPress={() => router.replace('/')}
-              style={styles.emptyButton}
-            />
-          </View>
-        </View>
-      </View>
+      <AuthLayout compact>
+        <StateView
+          icon="success"
+          tone="success"
+          title={t('application.receivedTitle')}
+          body={t('application.receivedBody', { email })}
+          style={styles.state}>
+          {/* replace: the filed application must not be reachable by back. */}
+          <PrimaryButton label={t('application.backToStart')} onPress={() => router.replace('/')} />
+        </StateView>
+      </AuthLayout>
     );
   }
 
-  // Reached without an address (a deep link, or a reload that lost the param):
-  // only the identification step can supply one.
   if (!email) {
     return (
-      <View style={styles.screen}>
-        <ThemedStatusBar surface="navy" />
-        <AuthBackdrop />
-        <View style={styles.cardWrap}>
-          <View style={styles.emptyState}>
-            <Text weight="bold" size={22} style={styles.centered}>
-              {t('auth.whichEmail')}
-            </Text>
-            <Text size={15} color={colors.textSecondary} style={styles.emptyBody}>
-              {t('auth.whichEmailBody')}
-            </Text>
-            <PrimaryButton
-              label={t('common.continue')}
-              onPress={() => router.replace('/')}
-              style={styles.emptyButton}
-            />
-          </View>
-        </View>
-      </View>
+      <AuthLayout compact>
+        <StateView icon="mail" title={t('auth.whichEmail')} body={t('auth.whichEmailBody')} style={styles.state}>
+          <PrimaryButton label={t('common.startAgain')} onPress={() => router.replace('/')} />
+        </StateView>
+      </AuthLayout>
     );
   }
 
@@ -246,351 +210,143 @@ export default function ApplicationScreen() {
       ? t('application.submitting')
       : t('application.submit');
 
-  return (
-    <View style={styles.screen}>
-      <ThemedStatusBar surface="navy" />
-      <AuthBackdrop />
+  if (step === 1) {
+    return (
+      <AuthLayout
+        compact
+        onBack={back}
+        bottomBar={<PrimaryButton label={t('common.continue')} onPress={continueToVehicle} style={styles.flex} />}>
+        <AuthHeading
+          overline={t('application.stepOf', { step: 1 })}
+          title={isReapplying ? t('application.reapplyTitle') : t('application.title')}
+          subtitle={t('application.subtitle')}
+        />
+        <EmailChip email={email} onChange={goToIdentification} />
 
-      <View style={styles.cardWrap}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.flex}>
-          <ScrollView
-            contentContainerStyle={[
-              styles.cardContent,
-              { paddingBottom: insets.bottom + Spacing.five },
-            ]}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            bounces={false}>
-            <View style={styles.heading}>
-              <Text weight="bold" size={24}>
-                {isReapplying ? t('application.reapplyTitle') : t('application.title')}
-              </Text>
-              <Text size={15} color={colors.textSecondary} style={styles.subtitle}>
-                {t('application.subtitle')}
-              </Text>
-            </View>
+        {isReapplying ? (
+          <InfoNote>
+            {rejectionReason
+              ? `${t('application.previousRejected')} ${t('application.rejectionReason', { reason: rejectionReason })}`
+              : t('application.previousRejected')}
+          </InfoNote>
+        ) : null}
 
-            <IdentityRow email={email} onChange={goBackToIdentification} />
-
-            {isReapplying ? (
-              <View style={styles.noticeBanner}>
-                <Text weight="semibold" size={14}>
-                  {t('application.previousRejected')}
-                </Text>
-                {rejectionReason ? (
-                  <Text size={14} color={colors.textSecondary} style={styles.noticeBody}>
-                    {t('application.rejectionReason', { reason: rejectionReason })}
-                  </Text>
-                ) : null}
-              </View>
-            ) : null}
-
-            {submitError ? (
-              <View style={styles.errorBanner}>
-                <Text size={14} color={colors.danger}>
-                  {submitError}
-                </Text>
-              </View>
-            ) : null}
-
-            <Text weight="bold" size={17} style={styles.sectionTitle}>
-              {t('application.aboutYou')}
-            </Text>
-
-            <View style={styles.row}>
-              <TextField
-                control={control}
-                name="firstName"
-                label={t('auth.firstName')}
-                placeholder={t('auth.firstName')}
-                autoCapitalize="words"
-                autoComplete="name-given"
-                containerStyle={styles.rowField}
-              />
-              <TextField
-                control={control}
-                name="lastName"
-                label={t('auth.lastName')}
-                placeholder={t('auth.lastName')}
-                autoCapitalize="words"
-                autoComplete="name-family"
-                containerStyle={styles.rowField}
-              />
-            </View>
-
-            <PhoneField control={control} />
-
-            <Text weight="bold" size={17} style={styles.sectionTitle}>
-              {t('application.vehicle')}
-            </Text>
-
-            <VehicleClassField control={control} name="vehicleType" containerStyle={styles.field} />
-
-            {needsPlate ? (
-              <>
-                <TextField
-                  control={control}
-                  name="licensePlate"
-                  label={t('auth.licensePlate')}
-                  placeholder={t('auth.licensePlatePlaceholder')}
-                  autoCapitalize="characters"
-                  containerStyle={styles.field}
-                />
-                <TextField
-                  control={control}
-                  name="licenseNumber"
-                  label={t('auth.licenseNumber')}
-                  placeholder={t('auth.licenseNumberPlaceholder')}
-                  autoCapitalize="characters"
-                  containerStyle={styles.field}
-                />
-              </>
-            ) : null}
-
-            <Text weight="bold" size={17} style={styles.sectionTitle}>
-              {t('application.documents')}
-            </Text>
-            <Text size={13} color={colors.textSecondary} style={styles.sectionHint}>
-              {t('application.documentsHint')}
-            </Text>
-
-            {APPLICATION_DOCUMENTS.map((doc) => {
-              const copy = DOCUMENT_COPY[doc];
-              const required = REQUIRED_APPLICATION_DOCUMENTS.includes(doc);
-              return (
-                <DocumentField
-                  key={doc}
-                  label={t(copy.label)}
-                  hint={copy.hint ? t(copy.hint) : undefined}
-                  optional={!required}
-                  liveOnly={copy.liveOnly}
-                  value={documents[doc]}
-                  onChange={(file) => setDocument(doc, file)}
-                  error={
-                    showDocumentErrors && required && !documents[doc]
-                      ? t('validation.documentRequired')
-                      : null
-                  }
-                  disabled={isSubmitting}
-                  fileNamePrefix={doc}
-                  containerStyle={styles.field}
-                />
-              );
-            })}
-
-            <PrimaryButton
-              label={submitLabel}
-              // The second callback runs when the schema refuses the form, so
-              // missing documents are flagged in the same pass as bad fields.
-              onPress={handleSubmit(onSubmit, () => setShowDocumentErrors(true))}
-              disabled={isSubmitting}
-              style={styles.submit}
-            />
-
-            <TermsFooter />
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </View>
-    </View>
-  );
-}
-
-/**
- * Phone input with a (static) country selector. Only the number is validated;
- * the +216 Tunisia code is fixed until multi-country support lands.
- */
-function PhoneField({ control }: { control: ReturnType<typeof useForm<ApplicationValues>>['control'] }) {
-  const { t } = useLocale();
-  const colors = useColors();
-  const styles = useStyles();
-  return (
-    <Controller
-      control={control}
-      name="phone"
-      render={({ field: { value, onChange, onBlur }, fieldState: { error } }) => (
-        <View style={styles.field}>
-          <Text weight="semibold" size={15} style={styles.phoneLabel}>
-            {t('auth.phoneNumber')}
-          </Text>
-          <View style={styles.phoneRow}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('auth.selectCountryCode')}
-              onPress={() => {}}
-              style={styles.countryPill}>
-              <View style={styles.flag}>
-                <Text size={16}>🇹🇳</Text>
-              </View>
-              <Text weight="medium" size={15}>
-                +216
-              </Text>
-              <Ionicons name="chevron-down" size={16} color={colors.textSecondary} />
-            </Pressable>
-            <View style={[styles.numberWrap, error && styles.inputError]}>
-              <TextInput
-                value={value ?? ''}
-                onChangeText={onChange}
-                onBlur={onBlur}
-                placeholder={t('auth.phonePlaceholder')}
-                placeholderTextColor={colors.textMuted}
-                keyboardType="phone-pad"
-                autoComplete="tel"
-                textContentType="telephoneNumber"
-                style={styles.numberInput}
-              />
-            </View>
-          </View>
-          {error ? (
-            <Text size={13} color={colors.danger} style={styles.phoneError}>
-              {translateFieldError(t, error.message)}
-            </Text>
-          ) : null}
+        <View style={styles.columns}>
+          <FormTextField
+            control={control}
+            name="firstName"
+            label={t('auth.firstName')}
+            placeholder={t('auth.firstName')}
+            autoCapitalize="words"
+            autoComplete="name-given"
+            containerStyle={styles.flex}
+          />
+          <FormTextField
+            control={control}
+            name="lastName"
+            label={t('auth.lastName')}
+            placeholder={t('auth.lastName')}
+            autoCapitalize="words"
+            autoComplete="name-family"
+            containerStyle={styles.flex}
+          />
         </View>
-      )}
-    />
+        <PhoneField control={control} name="phone" label={t('auth.phoneNumber')} placeholder={t('auth.phonePlaceholder')} />
+      </AuthLayout>
+    );
+  }
+
+  return (
+    <AuthLayout
+      compact
+      onBack={isSubmitting ? undefined : back}
+      bottomBar={
+        <PrimaryButton
+          label={submitLabel}
+          loading={isSubmitting}
+          // The second callback flags missing documents in the same pass as bad fields.
+          onPress={handleSubmit(onSubmit, onInvalid)}
+          style={styles.flex}
+        />
+      }>
+      <AuthHeading overline={t('application.stepOf', { step: 2 })} title={t('application.vehicleTitle')} compact />
+
+      {submitError ? <ErrorBanner message={submitError} /> : null}
+
+      <VehicleClassField control={control} name="vehicleType" disabled={isSubmitting} />
+
+      {needsPlate ? (
+        <>
+          <FormTextField
+            control={control}
+            name="licensePlate"
+            label={t('auth.licensePlate')}
+            placeholder={t('auth.licensePlatePlaceholder')}
+            autoCapitalize="characters"
+            disabled={isSubmitting}
+          />
+          <FormTextField
+            control={control}
+            name="licenseNumber"
+            label={t('auth.licenseNumber')}
+            placeholder={t('auth.licenseNumberPlaceholder')}
+            helper={t('auth.licenseNumberHelper')}
+            autoCapitalize="characters"
+            disabled={isSubmitting}
+          />
+        </>
+      ) : null}
+
+      <View style={styles.documents}>
+        <View style={styles.documentsHeading}>
+          <Text variant="sectionTitle" accessibilityRole="header">
+            {t('application.documents')}
+          </Text>
+          <Text variant="meta" color="inkMuted">
+            {t('application.documentsHint')}
+          </Text>
+        </View>
+        {APPLICATION_DOCUMENTS.map((doc) => {
+          const copy = DOCUMENT_COPY[doc];
+          const required = REQUIRED_APPLICATION_DOCUMENTS.includes(doc);
+          return (
+            <DocumentField
+              key={doc}
+              label={t(copy.label)}
+              hint={copy.hint ? t(copy.hint) : undefined}
+              optional={!required}
+              liveOnly={copy.liveOnly}
+              value={documents[doc]}
+              onChange={(file) => setDocument(doc, file)}
+              error={showDocumentErrors && required && !documents[doc] ? t('validation.documentRequired') : null}
+              disabled={isSubmitting}
+              fileNamePrefix={doc}
+            />
+          );
+        })}
+      </View>
+
+      <TermsFooter />
+    </AuthLayout>
   );
 }
 
-const useStyles = makeStyles((c) => ({
-  screen: {
-    flex: 1,
-    backgroundColor: c.navy,
-  },
+const useStyles = makeStyles(() => ({
   flex: {
     flex: 1,
   },
-  cardWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    // A definite height (not maxHeight): an auto-height absolute card leaves the
-    // ScrollView unbounded, so it sizes to its content and clips instead of
-    // scrolling. See the login screen for the same note.
-    height: '82%',
-    backgroundColor: c.card,
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
-    ...Shadow.card,
-  },
-  cardContent: {
-    paddingHorizontal: Spacing.five,
-    paddingTop: Spacing.six,
-  },
-  heading: {
-    alignItems: 'center',
-    marginBottom: Spacing.three,
-  },
-  subtitle: {
-    marginTop: Spacing.one,
-  },
-  errorBanner: {
-    padding: Spacing.three,
-    marginBottom: Spacing.four,
-    borderRadius: Radius.md,
-    backgroundColor: c.dangerSoft,
-  },
-  receivedBadge: {
-    alignSelf: 'center',
-    marginBottom: Spacing.four,
-  },
-  noticeBanner: {
-    padding: Spacing.three,
-    marginBottom: Spacing.four,
-    borderRadius: Radius.md,
-    backgroundColor: c.orangeSoft,
-  },
-  noticeBody: {
-    marginTop: Spacing.one,
-  },
-  sectionTitle: {
-    marginTop: Spacing.two,
-    marginBottom: Spacing.three,
-  },
-  sectionHint: {
-    marginTop: -Spacing.two,
-    marginBottom: Spacing.three,
-  },
-  row: {
+  columns: {
     flexDirection: 'row',
-    gap: Spacing.four,
-    marginBottom: Spacing.four,
+    gap: 12,
   },
-  rowField: {
-    flex: 1,
+  documents: {
+    gap: 12,
+    marginTop: 4,
   },
-  field: {
-    marginBottom: Spacing.four,
+  documentsHeading: {
+    gap: 4,
   },
-  phoneLabel: {
-    marginBottom: Spacing.two,
-  },
-  phoneRow: {
-    flexDirection: 'row',
-    gap: Spacing.three,
-  },
-  countryPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    height: 56,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: c.border,
-    backgroundColor: c.card,
-  },
-  flag: {
-    width: 26,
-    height: 26,
-    borderRadius: Radius.pill,
-    backgroundColor: c.pin,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  numberWrap: {
-    flex: 1,
-    justifyContent: 'center',
-    height: 56,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: c.border,
-    backgroundColor: c.card,
-    paddingHorizontal: Spacing.four,
-  },
-  numberInput: {
-    fontFamily: Fonts.regular,
-    fontSize: 16,
-    color: c.text,
-    padding: 0,
-  },
-  inputError: {
-    borderColor: c.danger,
-  },
-  submit: {
-    marginTop: Spacing.two,
-    marginBottom: Spacing.four,
-  },
-  phoneError: {
-    marginTop: Spacing.one,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.five,
-  },
-  centered: {
-    textAlign: 'center',
-  },
-  emptyBody: {
-    marginTop: Spacing.two,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  emptyButton: {
-    marginTop: Spacing.five,
+  state: {
+    paddingTop: 12,
   },
 }));

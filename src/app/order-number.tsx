@@ -1,75 +1,77 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useLocale } from '@/contexts/locale-context';
-import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
-import { makeStyles } from '@/hooks/use-themed-styles';
-import { useColors } from '@/contexts/theme-context';
+import { IconButton } from '@/components/ui/icon-button';
 import { Text } from '@/components/ui/text';
-import { Spacing } from '@/constants/theme';
+import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
+import { useLocale } from '@/contexts/locale-context';
 import { useSession } from '@/features/session/session-context';
+import { makeStyles } from '@/theme';
+
+import Logo from '../../assets/brand/logo-hungry.svg';
 
 /**
- * The pickup code, turned sideways so the courier can hold the phone up and the
- * clerk across the counter reads it the right way round.
+ * The pickup code, turned sideways so the rider can hold the phone up and the
+ * clerk across the counter reads it the right way round. Brand navy, the one
+ * full-bleed navy surface besides the auth header.
  */
 export default function OrderNumberScreen() {
   const { t } = useLocale();
-  const colors = useColors();
   const styles = useStyles();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { order } = useSession();
 
   return (
-    <View style={styles.screen}>
-      <ThemedStatusBar surface="navy" />
-
-      <View style={[styles.header, { paddingTop: insets.top + Spacing.four }]}>
-        <Text weight="bold" size={16} color={colors.onNavy}>
-          hungry<Text weight="bold" size={16} color={colors.orange}>.</Text>
-        </Text>
+    <View style={[styles.screen, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }]}>
+      <ThemedStatusBar surface="brand" />
+      <View style={styles.header}>
+        <Logo width={88} height={29} accessibilityLabel="Hungry" />
+        <IconButton
+          name="close"
+          variant="plain"
+          accessibilityLabel={t('common.close')}
+          onPress={() => router.back()}
+        />
       </View>
 
       <View style={styles.center}>
-        <Text weight="bold" size={110} color={colors.onNavy} style={styles.reference}>
-          #{order?.reference ?? '----'}
-        </Text>
+        <View style={styles.rotated}>
+          <Text variant="pickupCode" color="onBrand" numberOfLines={1} adjustsFontSizeToFit>
+            #{order?.reference ?? '----'}
+          </Text>
+          <Text variant="bodySmall" color="onBrand" align="center" style={styles.hint}>
+            {t('delivery.pickupCodeHint')}
+          </Text>
+        </View>
       </View>
-
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t('delivery.close')}
-        onPress={() => router.back()}
-        hitSlop={16}
-        style={[styles.close, { paddingBottom: insets.bottom + Spacing.four }]}>
-        <Ionicons name="close" size={28} color={colors.onNavy} />
-      </Pressable>
     </View>
   );
 }
 
-const useStyles = makeStyles((c) => ({
+const useStyles = makeStyles((c, t) => ({
   screen: {
     flex: 1,
-    backgroundColor: c.navy,
+    backgroundColor: c.brand,
   },
   header: {
-    paddingHorizontal: Spacing.five,
-    alignItems: 'flex-end',
+    paddingHorizontal: t.chromePadding,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  reference: {
+  rotated: {
     transform: [{ rotate: '90deg' }],
+    alignItems: 'center',
+    width: 600,
   },
-  close: {
-    alignSelf: 'flex-end',
-    paddingHorizontal: Spacing.five,
+  hint: {
+    opacity: 0.8,
   },
 }));

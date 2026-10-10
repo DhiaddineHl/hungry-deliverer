@@ -151,6 +151,13 @@ export interface DeliveryOffer {
   total: number | null;
   currency: string | null;
   comment: string | null;
+  /**
+   * What the rider earns for this trip. Not sent by the backend yet — the
+   * offer card shows the order total, labelled as such, until it is.
+   */
+  driverEarnings?: number | null;
+  /** `CASH` / `ONLINE`. Not sent yet; "Collect in cash" only shows once it is. */
+  paymentMethod?: string | null;
   etaToPickupMinutes: number;
   etaToDropoffMinutes: number;
   distanceKm: number;

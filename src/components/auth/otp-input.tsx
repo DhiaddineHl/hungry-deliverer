@@ -1,8 +1,7 @@
-import { forwardRef, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { TextInput, View } from 'react-native';
 
-import { makeStyles } from '@/hooks/use-themed-styles';
-import { Fonts, Radius, Spacing } from '@/constants/theme';
+import { focusGlow, makeStyles, useTheme } from '@/theme';
 
 export type OtpInputHandle = {
   /** Puts the caret back in the first box — after a resend, say. */
@@ -14,25 +13,26 @@ type Props = {
   value: string[];
   onChange: (next: string[]) => void;
   editable?: boolean;
+  /** A wrong or expired code: every box turns red. */
+  error?: boolean;
 };
 
 /**
- * The row of one-time-code boxes, shared by the two flows that ask for a code:
- * sign-up verification and the forgotten-password reset. They ask for the same
- * thing in the same shape, and the fiddly parts — spreading an autofilled code
- * across the boxes, walking the caret backwards on delete — are worth getting
- * right once.
+ * The row of one-time-code boxes, shared by sign-up verification and the
+ * password reset. The fiddly parts — spreading an autofilled code across the
+ * boxes, walking the caret backwards on delete — are worth getting right once.
  *
- * The box count follows `value.length` rather than a prop of its own, because
- * the backend is what decides how many digits it generates and the screens
- * already hold that answer in the array they pass down.
+ * The box count follows `value.length`: the backend decides how many digits it
+ * generates, and the screens already hold that answer in the array.
  */
 export const OtpInput = forwardRef<OtpInputHandle, Props>(function OtpInput(
-  { value, onChange, editable = true },
+  { value, onChange, editable = true, error = false },
   ref
 ) {
+  const { colors } = useTheme();
   const styles = useStyles();
   const inputRefs = useRef<(TextInput | null)[]>([]);
+  const [focused, setFocused] = useState<number | null>(null);
   const codeLength = value.length;
 
   useImperativeHandle(ref, () => ({
@@ -45,17 +45,13 @@ export const OtpInput = forwardRef<OtpInputHandle, Props>(function OtpInput(
       onChange(value.map((digit, i) => (i === index ? '' : digit)));
       return;
     }
-
-    // A pasted or autofilled code lands in one box: spread it across the rest
-    // rather than keeping a single character and dropping the others.
+    // A pasted or autofilled code lands in one box: spread it across the rest.
     const next = [...value];
     for (let i = 0; i < digits.length && index + i < codeLength; i++) {
       next[index + i] = digits[i];
     }
     onChange(next);
-
-    const landed = Math.min(index + digits.length, codeLength - 1);
-    inputRefs.current[landed]?.focus();
+    inputRefs.current[Math.min(index + digits.length, codeLength - 1)]?.focus();
   };
 
   const handleKeyPress = (key: string, index: number) => {
@@ -65,53 +61,65 @@ export const OtpInput = forwardRef<OtpInputHandle, Props>(function OtpInput(
   };
 
   return (
-    <View style={styles.row}>
-      {value.map((digit, index) => (
-        <TextInput
-          key={index}
-          ref={(input) => {
-            inputRefs.current[index] = input;
-          }}
-          style={[styles.box, !!digit && styles.boxFilled]}
-          value={digit}
-          onChangeText={(text) => handleChange(text, index)}
-          onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, index)}
-          keyboardType="number-pad"
-          // One box, but the OS autofills the whole SMS/email code into the
-          // first one — handleChange spreads it from there.
-          textContentType={index === 0 ? 'oneTimeCode' : 'none'}
-          autoComplete={index === 0 ? 'sms-otp' : 'off'}
-          maxLength={codeLength}
-          editable={editable}
-          selectTextOnFocus
-          accessibilityLabel={`Digit ${index + 1} of ${codeLength}`}
-        />
-      ))}
+    <View style={[styles.row, !editable && styles.locked]}>
+      {value.map((digit, index) => {
+        const isFocused = focused === index && !error;
+        return (
+          <TextInput
+            key={index}
+            ref={(input) => {
+              inputRefs.current[index] = input;
+            }}
+            style={[styles.box, isFocused && styles.boxFocused, error && styles.boxError]}
+            value={digit}
+            onChangeText={(text) => handleChange(text, index)}
+            onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, index)}
+            onFocus={() => setFocused(index)}
+            onBlur={() => setFocused((current) => (current === index ? null : current))}
+            keyboardType="number-pad"
+            // The OS autofills the whole code into the first box; handleChange spreads it.
+            textContentType={index === 0 ? 'oneTimeCode' : 'none'}
+            autoComplete={index === 0 ? 'sms-otp' : 'off'}
+            maxLength={codeLength}
+            editable={editable}
+            selectTextOnFocus
+            cursorColor={colors.primary}
+            selectionColor={colors.primary}
+            accessibilityLabel={`Digit ${index + 1} of ${codeLength}`}
+          />
+        );
+      })}
     </View>
   );
 });
 
-const useStyles = makeStyles((c) => ({
+const useStyles = makeStyles((c, t) => ({
   row: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: Spacing.two,
-    marginBottom: Spacing.four,
+    gap: 8,
+  },
+  locked: {
+    opacity: t.opacity.lockedInput,
   },
   box: {
     flex: 1,
-    height: 60,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: c.border,
-    backgroundColor: c.card,
-    fontFamily: Fonts.semibold,
-    fontSize: 22,
+    height: t.size.otpBox,
+    borderRadius: t.radius.field,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    backgroundColor: c.surfaceMuted,
+    ...t.typography.otpDigit,
+    color: c.ink,
     textAlign: 'center',
-    color: c.text,
     padding: 0,
   },
-  boxFilled: {
-    borderColor: c.orange,
+  boxFocused: {
+    backgroundColor: c.surface,
+    borderColor: c.ink,
+    boxShadow: focusGlow(c.focusGlow),
+  },
+  boxError: {
+    backgroundColor: c.surface,
+    borderColor: c.danger,
   },
 }));

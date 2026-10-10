@@ -1,24 +1,14 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AuthHeading } from '@/components/auth/auth-common';
+import { AuthLayout } from '@/components/auth/auth-layout';
+import { CodeEntry } from '@/components/auth/code-entry';
+import { type OtpInputHandle } from '@/components/auth/otp-input';
+import { PrimaryButton, TextLink } from '@/components/ui/button';
+import { ErrorBanner, InfoNote, StateView } from '@/components/ui/feedback';
 import { useLocale } from '@/contexts/locale-context';
-import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
-import { makeStyles } from '@/hooks/use-themed-styles';
-import { useColors } from '@/contexts/theme-context';
-import { AuthBackdrop } from '@/components/auth/auth-backdrop';
-import { OtpInput, type OtpInputHandle } from '@/components/auth/otp-input';
-import { PrimaryButton } from '@/components/ui/primary-button';
-import { Text } from '@/components/ui/text';
-import { Radius, Shadow, Spacing } from '@/constants/theme';
+import { makeStyles } from '@/theme';
 import { isApiError } from '@/services/api/client';
 import { sendPasswordResetCode, verifyPasswordResetCode } from '@/services/api/driver-service';
 import { usePasswordResetStore } from '@/store/password-reset-store';
@@ -48,9 +38,7 @@ const DEFAULT_RESEND_COOLDOWN = 60;
  */
 export default function ResetCodeScreen() {
   const { t } = useLocale();
-  const colors = useColors();
   const styles = useStyles();
-  const insets = useSafeAreaInsets();
   const email = usePasswordResetStore((state) => state.email);
   const setTicket = usePasswordResetStore((state) => state.setTicket);
   // An approved applicant activating their account rather than someone who
@@ -91,7 +79,7 @@ export default function ResetCodeScreen() {
       setNotice(
         challenge.delivered
           ? null
-          : 'The server has no mail transport configured — the code is in its logs.'
+          : t('verification.noMailTransport')
       );
       otpRef.current?.focusFirst();
     } catch (err) {
@@ -101,11 +89,11 @@ export default function ResetCodeScreen() {
         const retryAfter = err.data?.retryAfterSeconds;
         if (typeof retryAfter === 'number') setTimer(Math.ceil(retryAfter));
       }
-      setError(err instanceof Error ? err.message : 'Could not send the code. Please try again.');
+      setError(err instanceof Error ? err.message : t('passwordReset.errorSend'));
     } finally {
       setIsResending(false);
     }
-  }, [email, timer, isResending]);
+  }, [email, timer, isResending, t]);
 
   const handleCodeChange = (next: string[]) => {
     setCode(next);
@@ -128,7 +116,7 @@ export default function ResetCodeScreen() {
         setTimer(0);
         setCode(Array(codeLength).fill(''));
       }
-      setError(err instanceof Error ? err.message : 'Could not verify the code. Please try again.');
+      setError(err instanceof Error ? err.message : t('verification.errorVerify'));
     } finally {
       setIsVerifying(false);
     }
@@ -138,201 +126,54 @@ export default function ResetCodeScreen() {
   // check a code against and nothing was ever sent.
   if (!email) {
     return (
-      <View style={styles.screen}>
-        <ThemedStatusBar surface="navy" />
-        <AuthBackdrop />
-        <View style={styles.cardWrap}>
-          <View style={styles.emptyState}>
-            <Text weight="bold" size={22} style={styles.centered}>
-              {t('passwordReset.nothingToReset')}
-            </Text>
-            <Text size={15} color={colors.textSecondary} style={styles.emptyBody}>
-              {t('passwordReset.nothingToResetBody')}
-            </Text>
-            <PrimaryButton
-              label={t('common.startAgain')}
-              onPress={() => router.replace(restartRoute)}
-              style={styles.emptyButton}
-            />
-          </View>
-        </View>
-      </View>
+      <AuthLayout>
+        <StateView icon="mail" title={t('passwordReset.nothingToReset')} body={t('passwordReset.nothingToResetBody')}>
+          <PrimaryButton label={t('common.startAgain')} onPress={() => router.replace(restartRoute)} />
+        </StateView>
+      </AuthLayout>
     );
   }
 
   return (
-    <View style={styles.screen}>
-      <ThemedStatusBar surface="navy" />
-      <AuthBackdrop />
+    <AuthLayout onBack={() => router.replace(restartRoute)}>
+      <AuthHeading
+        title={isActivation ? t('passwordReset.activateTitle') : t('passwordReset.resetTitle')}
+        subtitle={`${t('passwordReset.sentCodeTo')} ${email}`}
+      />
 
-      <View style={styles.cardWrap}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.flex}>
-          <ScrollView
-            contentContainerStyle={[
-              styles.cardContent,
-              { paddingBottom: insets.bottom + Spacing.five },
-            ]}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            bounces={false}>
-            <View style={styles.heading}>
-              <Text weight="bold" size={24}>
-                {isActivation ? t('passwordReset.activateTitle') : t('passwordReset.resetTitle')}
-              </Text>
-              <Text size={15} color={colors.textSecondary} style={styles.subtitle}>
-                {t('passwordReset.sentCodeTo')}
-              </Text>
-              <Text weight="semibold" size={15} style={styles.headingEmail}>
-                {email}
-              </Text>
-            </View>
+      {notice && !error ? <InfoNote>{notice}</InfoNote> : null}
+      {error ? <ErrorBanner message={error} /> : null}
 
-            <Text weight="semibold" size={15} style={styles.codeLabel}>
-              Code
-            </Text>
+      <CodeEntry
+        ref={otpRef}
+        code={code}
+        onChange={handleCodeChange}
+        editable={!isVerifying}
+        error={!!error}
+        secondsLeft={timer}
+        resending={isResending}
+        onResend={handleResend}
+      />
 
-            <OtpInput
-              ref={otpRef}
-              value={code}
-              onChange={handleCodeChange}
-              editable={!isVerifying}
-            />
+      <PrimaryButton
+        label={isVerifying ? t('verification.verifying') : t('verification.verify')}
+        loading={isVerifying}
+        onPress={handleVerify}
+        disabled={!isComplete || isResending}
+      />
 
-            {error ? (
-              <View style={styles.errorBanner}>
-                <Text size={14} color={colors.danger}>
-                  {error}
-                </Text>
-              </View>
-            ) : null}
-
-            {notice && !error ? (
-              <View style={styles.noticeBanner}>
-                <Text size={14} color={colors.navy}>
-                  {notice}
-                </Text>
-              </View>
-            ) : null}
-
-            <View style={styles.resendRow}>
-              {isResending ? (
-                <ActivityIndicator size="small" color={colors.orange} />
-              ) : (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t('passwordReset.resendReset')}
-                  onPress={handleResend}
-                  disabled={timer > 0}
-                  hitSlop={8}>
-                  <Text size={14} color={timer > 0 ? colors.textMuted : colors.orange}>
-                    {timer > 0 ? `Resend in ${timer}s` : 'Resend'}
-                  </Text>
-                </Pressable>
-              )}
-            </View>
-
-            <PrimaryButton
-              label={isVerifying ? 'VERIFYING…' : 'VERIFY'}
-              onPress={handleVerify}
-              disabled={!isComplete || isVerifying || isResending}
-              style={styles.submit}
-            />
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('verification.useDifferentEmail')}
-              onPress={() => router.replace(restartRoute)}
-              hitSlop={8}>
-              <Text size={14} color={colors.textSecondary} style={styles.changeEmail}>
-                {t('verification.wrongEmail')}
-              </Text>
-            </Pressable>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </View>
-    </View>
+      <TextLink
+        label={t('verification.wrongEmail')}
+        accessibilityLabel={t('verification.useDifferentEmail')}
+        onPress={() => router.replace(restartRoute)}
+        style={styles.centered}
+      />
+    </AuthLayout>
   );
 }
 
-const useStyles = makeStyles((c) => ({
-  screen: {
-    flex: 1,
-    backgroundColor: c.navy,
-  },
-  flex: {
-    flex: 1,
-  },
-  cardWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    // Matches the sign-up verification card — same boxes, same copy depth.
-    height: '72%',
-    backgroundColor: c.card,
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
-    ...Shadow.card,
-  },
-  cardContent: {
-    paddingHorizontal: Spacing.five,
-    paddingTop: Spacing.six,
-  },
-  heading: {
-    alignItems: 'center',
-    marginBottom: Spacing.five,
-  },
-  subtitle: {
-    marginTop: Spacing.one,
-    textAlign: 'center',
-  },
-  headingEmail: {
-    marginTop: Spacing.one,
-  },
-  codeLabel: {
-    marginBottom: Spacing.two,
-  },
-  errorBanner: {
-    padding: Spacing.three,
-    marginBottom: Spacing.three,
-    borderRadius: Radius.md,
-    backgroundColor: c.dangerSoft,
-  },
-  noticeBanner: {
-    padding: Spacing.three,
-    marginBottom: Spacing.three,
-    borderRadius: Radius.md,
-    backgroundColor: c.orangeSoft,
-  },
-  resendRow: {
-    alignSelf: 'flex-end',
-    minHeight: 20,
-    justifyContent: 'center',
-    marginBottom: Spacing.five,
-  },
-  submit: {
-    marginBottom: Spacing.four,
-  },
-  changeEmail: {
-    textAlign: 'center',
-    textDecorationLine: 'underline',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.five,
-  },
+const useStyles = makeStyles(() => ({
   centered: {
-    textAlign: 'center',
-  },
-  emptyBody: {
-    marginTop: Spacing.two,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  emptyButton: {
-    marginTop: Spacing.five,
+    alignSelf: 'center',
   },
 }));

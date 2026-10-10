@@ -1,249 +1,219 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useState } from 'react';
-import { Pressable, View, type LayoutChangeEvent } from 'react-native';
-import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import { useState } from 'react';
+import { Pressable, View } from 'react-native';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
-import { useLocale } from '@/contexts/locale-context';
-import { makeStyles } from '@/hooks/use-themed-styles';
-import { useColors } from '@/contexts/theme-context';
-import { OrderItemsList } from '@/components/sheets/order-items-list';
-import { PrimaryButton } from '@/components/ui/primary-button';
+import { PrimaryButton, TextLink } from '@/components/ui/button';
+import { ErrorBanner, SuccessLine } from '@/components/ui/feedback';
 import { SlideToConfirm } from '@/components/ui/slide-to-confirm';
 import { Text } from '@/components/ui/text';
-import { Radius, Shadow, Spacing } from '@/constants/theme';
+import { CashToCollect, ContactBlock, OrderSummary, StepHeader } from '@/components/sheets/trip-parts';
+import { useLocale } from '@/contexts/locale-context';
+import {
+  ARRIVAL_RADIUS_METERS,
+  DELIVERY_RADIUS_METERS,
+  type StatusReport,
+} from '@/features/session/session-context';
 import type { Order, SessionPhase } from '@/features/session/types';
+import { Icon, makeStyles } from '@/theme';
 
-type ActivePhase = Extract<
-  SessionPhase,
-  'toStore' | 'orderReady' | 'toCustomer' | 'completed'
->;
+export type TripPhase = Extract<SessionPhase, 'toStore' | 'orderReady' | 'toCustomer'>;
 
 type Props = {
   order: Order;
-  phase: ActivePhase;
+  phase: TripPhase;
   expanded: boolean;
   onToggle: () => void;
-  onCall: (phone: string) => void;
-  onOpenOrderNumber: () => void;
-  onValidate: () => void;
-  /** Within delivery range of the customer — gates the confirm slider. */
-  canConfirmDelivery: boolean;
+  /** Within delivery range of the customer — unlocks the slider (D7 → D8). */
+  nearCustomer: boolean;
+  onConfirmPickup: () => void;
   onConfirmDelivery: () => void;
+  onShowOrderNumber: () => void;
+  /** A pickup / delivery report waiting on the backend. */
+  reportPending: StatusReport | null;
+  /** The last report the backend refused — shown above the action. */
+  reportFailed: StatusReport | null;
 };
 
-function headerLabel(t: ReturnType<typeof useLocale>['t'], order: Order, phase: ActivePhase) {
-  switch (phase) {
-    case 'toStore':
-      return t('delivery.minutesToPickup', { count: order.minutesToPickup });
-    case 'orderReady':
-      return t('delivery.orderReady');
-    case 'toCustomer':
-      return t('delivery.expectedArrival', { time: order.expectedArrival });
-    case 'completed':
-      return t('delivery.arrivedAhead', { time: order.arrivedAt });
-  }
-}
-
 /**
- * The bottom sheet for an accepted order. Collapsed it is a single bar; expanded
- * it shows the contact, the order and the phase's call to action.
+ * The in-trip sheet content, D4–D8. Mounted keyed by order, so the bag
+ * checklist starts empty for every new order.
+ *
+ *   toStore    D4 pickup (D5 when collapsed)
+ *   orderReady D6 at the store, checking the bag
+ *   toCustomer D7 on the way (slider locked) / D8 arrived (slider ready)
  */
 export function ActiveOrderSheet({
   order,
   phase,
   expanded,
   onToggle,
-  onCall,
-  onOpenOrderNumber,
-  onValidate,
-  canConfirmDelivery,
+  nearCustomer,
+  onConfirmPickup,
   onConfirmDelivery,
+  onShowOrderNumber,
+  reportPending,
+  reportFailed,
 }: Props) {
   const { t } = useLocale();
-  const colors = useColors();
   const styles = useStyles();
-  const [ctaWidth, setCtaWidth] = useState(0);
+  const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
+  // D7 shows the order collapsed, D8 opens it so the rider can hand it over.
+  const [itemsOpen, setItemsOpen] = useState<boolean | null>(null);
 
-  const atStore = phase === 'toStore' || phase === 'orderReady';
-  const contact = atStore ? order.store : order.customer;
+  const pickup = phase !== 'toCustomer';
+  const status = pickup
+    ? phase === 'toStore'
+      ? t('delivery.minutesLeft', { count: order.minutesToPickup })
+      : t('delivery.atTheStore')
+    : nearCustomer
+      ? t('delivery.atDropoff')
+      : t('delivery.minutesAway', { count: order.etaToCustomerMinutes });
 
-  const handleCall = useCallback(() => onCall(contact.phone), [contact.phone, onCall]);
+  if (!expanded) {
+    // D5 — one summary row; the whole row expands the sheet.
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t('delivery.expandSheet')}
+        onPress={onToggle}
+        style={styles.collapsed}>
+        <View style={styles.flex}>
+          <Text variant="label" color="inkMuted">
+            {pickup
+              ? t('delivery.collapsedPickup', { status })
+              : t('delivery.collapsedDropoff', { status })}
+          </Text>
+          <Text variant="rowTitle" numberOfLines={1}>
+            {pickup ? order.store.name : order.customer.name}
+          </Text>
+        </View>
+        <Icon name="chevronUp" size="row" />
+      </Pressable>
+    );
+  }
 
-  const handleCtaLayout = useCallback((event: LayoutChangeEvent) => {
-    setCtaWidth(event.nativeEvent.layout.width);
-  }, []);
+  const toggleItem = (id: string) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const allChecked = order.items.every((item) => checked.has(item.id));
 
   return (
-    <Animated.View layout={LinearTransition.duration(240)} style={styles.sheet}>
-      <View style={styles.header}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={expanded ? t('delivery.collapseOrderDetails') : t('delivery.expandOrderDetails')}
-          accessibilityState={{ expanded }}
-          onPress={onToggle}
-          hitSlop={12}
-          style={styles.headerIcon}>
-          <Ionicons
-            name={expanded ? 'chevron-down' : 'chevron-up'}
-            size={22}
-            color={colors.text}
-          />
-        </Pressable>
+    <Animated.View entering={FadeIn.duration(180)} style={styles.content}>
+      <StepHeader step={pickup ? 1 : 2} status={status} />
 
-        <Text weight="medium" size={15} numberOfLines={1} style={styles.headerLabel}>
-          {headerLabel(t, order, phase)}
-        </Text>
+      {phase === 'orderReady' ? <SuccessLine>{t('delivery.atStoreLine')}</SuccessLine> : null}
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('delivery.orderDetails')}
-          onPress={onToggle}
-          hitSlop={12}
-          style={styles.headerIcon}>
-          <Ionicons name="menu" size={22} color={colors.text} />
-        </Pressable>
-      </View>
+      {pickup ? (
+        <ContactBlock kind="store" name={order.store.name} address={order.store.address} phone={order.store.phone} />
+      ) : (
+        <ContactBlock
+          kind="customer"
+          name={order.customer.name}
+          address={order.customer.address}
+          phone={order.customer.phone}
+        />
+      )}
 
-      {expanded ? (
-        <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(120)}>
-          <View style={styles.contactRow}>
-            <View style={styles.contactText}>
-              <Text weight="bold" size={22}>
-                {contact.name}
-              </Text>
-              <Text size={15} color={colors.textSecondary} style={styles.address}>
-                {contact.address}
-              </Text>
-            </View>
+      {!pickup && order.paymentMethod === 'cash' ? <CashToCollect amount={order.totalTnd} /> : null}
 
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Call ${contact.name}`}
-              onPress={handleCall}
-              style={({ pressed }) => [styles.call, pressed && styles.pressed]}>
-              <Ionicons name="call" size={22} color={colors.onNavy} />
-            </Pressable>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.orderRow}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Show order number ${order.reference} to the store`}
-              onPress={onOpenOrderNumber}
-              disabled={!atStore}
-              style={styles.orderRef}>
-              <Text weight="bold" size={19}>
-                Order #{order.reference}
-              </Text>
-              {atStore ? (
-                <Ionicons name="chevron-forward" size={18} color={colors.text} />
-              ) : null}
-            </Pressable>
-
-            <Text size={15} color={colors.textSecondary}>
-              Total:{' '}
-              <Text weight="bold" size={15} color={colors.orange}>
-                {order.totalTnd.toFixed(1)} TND
-              </Text>
+      {phase === 'toStore' ? (
+        <>
+          <OrderSummary reference={order.reference} items={order.items} expanded />
+          <View style={styles.action}>
+            {/* Arrival is detected from GPS; the button carries the rule until it is. */}
+            <PrimaryButton label={t('delivery.arrivedAtStore')} onPress={() => {}} disabled />
+            <Text variant="caption" color="inkMuted" align="center" style={styles.regular}>
+              {t('delivery.arrivalHelper', { meters: ARRIVAL_RADIUS_METERS })}
             </Text>
           </View>
+        </>
+      ) : null}
 
-          <Text size={13} color={colors.teal} style={styles.itemCount}>
-            {order.items.length} items
-          </Text>
-
-          <OrderItemsList items={order.items} />
-
-          <View style={styles.cta} onLayout={handleCtaLayout}>
-            {atStore ? (
-              <PrimaryButton
-                label={t('delivery.validateOrder')}
-                onPress={onValidate}
-                disabled={phase === 'toStore'}
-              />
-            ) : ctaWidth > 0 ? (
-              <SlideToConfirm
-                label={t('delivery.confirmDelivery')}
-                trackWidth={ctaWidth}
-                confirmed={phase === 'completed'}
-                disabled={phase === 'toCustomer' && !canConfirmDelivery}
-                onConfirm={onConfirmDelivery}
-              />
-            ) : null}
+      {phase === 'orderReady' ? (
+        <>
+          <View style={styles.checklist}>
+            <View style={styles.checklistHeader}>
+              <Text variant="label">{t('delivery.checkBag')}</Text>
+              <TextLink label={t('delivery.showCode')} onPress={onShowOrderNumber} />
+            </View>
+            <OrderSummary
+              reference={order.reference}
+              items={order.items}
+              expanded
+              checked={checked}
+              onToggleItem={toggleItem}
+            />
           </View>
-        </Animated.View>
+          {reportFailed === 'pickup' ? <ErrorBanner message={t('delivery.pickupFailed')} /> : null}
+          <PrimaryButton
+            label={
+              allChecked
+                ? reportFailed === 'pickup'
+                  ? t('common.retry')
+                  : t('delivery.confirmPickup')
+                : t('delivery.confirmPickupProgress', { checked: checked.size, total: order.items.length })
+            }
+            disabled={!allChecked}
+            loading={reportPending === 'pickup'}
+            onPress={onConfirmPickup}
+          />
+        </>
+      ) : null}
+
+      {phase === 'toCustomer' ? (
+        <>
+          <OrderSummary
+            reference={order.reference}
+            items={order.items}
+            expanded={itemsOpen ?? nearCustomer}
+            onToggle={() => setItemsOpen(!(itemsOpen ?? nearCustomer))}
+          />
+          {reportFailed === 'delivery' ? <ErrorBanner message={t('delivery.deliveryFailed')} /> : null}
+          <SlideToConfirm
+            confirming={reportPending === 'delivery'}
+            label={t('delivery.slideToConfirm')}
+            confirmingLabel={t('delivery.confirming')}
+            locked={!nearCustomer}
+            lockedHelper={t('delivery.confirmHelper', { meters: DELIVERY_RADIUS_METERS })}
+            onConfirm={onConfirmDelivery}
+          />
+        </>
       ) : null}
     </Animated.View>
   );
 }
 
-const useStyles = makeStyles((c) => ({
-  sheet: {
-    backgroundColor: c.card,
-    borderRadius: Radius.xl,
-    paddingHorizontal: Spacing.five,
-    paddingVertical: Spacing.four,
-    ...Shadow.card,
+const useStyles = makeStyles((c, t) => ({
+  flex: {
+    flex: 1,
   },
-  header: {
+  regular: {
+    fontFamily: t.typography.description.fontFamily,
+  },
+  collapsed: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: t.size.minTouch,
+  },
+  content: {
+    gap: 14,
+  },
+  action: {
+    gap: 6,
+  },
+  checklist: {
+    gap: 6,
+  },
+  checklistHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: Spacing.two,
-  },
-  headerIcon: {
-    width: 24,
-    alignItems: 'center',
-  },
-  headerLabel: {
-    flex: 1,
-    textAlign: 'center',
-  },
-  contactRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.four,
-    marginTop: Spacing.four,
-  },
-  contactText: {
-    flex: 1,
-  },
-  address: {
-    marginTop: 2,
-  },
-  call: {
-    width: 48,
-    height: 48,
-    borderRadius: Radius.pill,
-    backgroundColor: c.navy,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: c.border,
-    marginVertical: Spacing.four,
-  },
-  orderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  orderRef: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  itemCount: {
-    marginTop: 2,
-    marginBottom: Spacing.three,
-  },
-  cta: {
-    marginTop: Spacing.five,
-  },
-  pressed: {
-    opacity: 0.8,
+    gap: 12,
   },
 }));

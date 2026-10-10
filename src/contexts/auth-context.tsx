@@ -10,12 +10,14 @@ import {
   isTokenExpired,
   logout as keycloakLogout,
   loginWithPassword,
+  onSessionEnded,
   refreshAccessToken,
   type AuthResult,
   type KeycloakUserInfo,
 } from '@/services/keycloak/auth-service';
 import { keycloakConfig } from '@/services/keycloak/config';
 import { clearTokens, getTokens } from '@/services/keycloak/token-storage';
+import { disconnectRealtime } from '@/services/realtime/stomp-client';
 import { useDriverStore } from '@/store/driver-store';
 import { usePasswordResetStore } from '@/store/password-reset-store';
 
@@ -56,8 +58,9 @@ export function wasCancelled(error?: string): boolean {
 }
 
 /**
- * A Google account with no approved deliverer behind it. Exported so the
- * identification screen can recognise it and show its translated copy.
+ * A Keycloak account with no approved rider behind it — a Google account the
+ * realm brokered, or a customer account from the same realm. Exported so the
+ * sign-in screens can recognise it and show their translated copy.
  */
 export const NO_DELIVERER_ACCOUNT = 'NO_DELIVERER_ACCOUNT';
 
@@ -87,8 +90,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // The exact value below must be listed in the Keycloak client's "Valid
   // redirect URIs". If Keycloak answers "Invalid parameter: redirect_uri",
   // copy this string verbatim into that list — in Expo Go it is an exp://…
-  // URL, not hungrydeliverer://.
-  console.log('[Auth] OAuth redirect_uri =', redirectUri);
+  // URL, not hungrydeliverer://. Logged once, and only in development.
+  useEffect(() => {
+    if (__DEV__) console.log('[Auth] OAuth redirect_uri =', redirectUri);
+  }, [redirectUri]);
 
   // Browser-based Authorization Code + PKCE flow, jumping straight to Google.
   const [googleRequest, , promptGoogleAsync] = AuthSession.useAuthRequest(
@@ -125,12 +130,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsDriverResolved(false);
       loadDriverForAccount(queryClient, sub)
         .catch((error) => {
-          console.warn('[Auth] Could not resolve the driver record:', error);
+          if (__DEV__) console.warn('[Auth] Could not resolve the driver record:', error);
         })
         .finally(() => setIsDriverResolved(true));
     },
     [queryClient]
   );
+
+  /**
+   * Admits a freshly authenticated account only if it is a rider. A valid
+   * Keycloak token proves nothing about that: the realm brokers any Google
+   * account and also holds customer accounts. Only an approved application
+   * creates a Driver row, so an account without one is signed straight back
+   * out. A lookup that fails (network) lets the session through — the backend
+   * still authorizes every call — rather than locking riders out on a blip.
+   *
+   * Returns the user to store (undefined when userinfo was unavailable), or
+   * null when the account was turned away.
+   */
+  const admitRider = useCallback(async (): Promise<KeycloakUserInfo | null | undefined> => {
+    const userInfo = await fetchUserInfo();
+    // No claims (offline cold start, userinfo hiccup) is not evidence of a
+    // non-rider: only a lookup that answered "no Driver" turns an account away.
+    if (!userInfo?.sub) return undefined;
+    const driver = await loadDriverForAccount(queryClient, userInfo.sub).catch(() => undefined);
+    if (driver === null) {
+      await keycloakLogout();
+      queryClient.clear();
+      return null;
+    }
+    return userInfo ?? undefined;
+  }, [queryClient]);
 
   // Drives a browser auth request to completion: prompt, then exchange the
   // returned authorization code (+ PKCE verifier) for tokens and load the user.
@@ -151,20 +181,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             redirectUri
           );
           if (tokenResult.success) {
-            const userInfo = await fetchUserInfo();
-            // Keycloak happily brokers ANY Google account into the realm, so a
-            // valid token proves nothing about being a deliverer. Only an
-            // approved application creates a Driver row; an account without
-            // one is signed straight back out rather than let in.
-            const driver = userInfo?.sub
-              ? await loadDriverForAccount(queryClient, userInfo.sub).catch(() => undefined)
-              : null;
-            if (driver === null) {
-              await keycloakLogout();
-              queryClient.clear();
-              return { success: false, error: NO_DELIVERER_ACCOUNT };
-            }
-            setState({ isAuthenticated: true, isLoading: false, user: userInfo });
+            const userInfo = await admitRider();
+            if (userInfo === null) return { success: false, error: NO_DELIVERER_ACCOUNT };
+            setState({ isAuthenticated: true, isLoading: false, user: userInfo ?? null });
             ensureDriver(userInfo?.sub);
           }
           return tokenResult;
@@ -177,7 +196,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: false, error: 'Authentication failed. Please try again.' };
       }
     },
-    [redirectUri, ensureDriver, queryClient]
+    [redirectUri, ensureDriver, admitRider]
   );
 
   useEffect(() => {
@@ -200,8 +219,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        const userInfo = await fetchUserInfo();
-        setState({ isAuthenticated: true, isLoading: false, user: userInfo });
+        // A stored session is re-checked too: it may belong to a non-rider
+        // account signed in by an older build of the app.
+        const userInfo = await admitRider();
+        if (userInfo === null) {
+          setState({ isAuthenticated: false, isLoading: false, user: null });
+          setIsDriverResolved(true);
+          return;
+        }
+        setState({ isAuthenticated: true, isLoading: false, user: userInfo ?? null });
         ensureDriver(userInfo?.sub);
       } catch {
         setState({ isAuthenticated: false, isLoading: false, user: null });
@@ -216,13 +242,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (email: string, password: string): Promise<AuthResult> => {
       const result = await loginWithPassword(email, password);
       if (result.success) {
-        const userInfo = await fetchUserInfo();
-        setState({ isAuthenticated: true, isLoading: false, user: userInfo });
+        const userInfo = await admitRider();
+        if (userInfo === null) return { success: false, error: NO_DELIVERER_ACCOUNT };
+        setState({ isAuthenticated: true, isLoading: false, user: userInfo ?? null });
         ensureDriver(userInfo?.sub);
       }
       return result;
     },
-    [ensureDriver]
+    [ensureDriver, admitRider]
   );
 
   const loginWithGoogleFn = useCallback(
@@ -239,28 +266,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const logoutFn = useCallback(async () => {
-    // Must run before the session is cleared — the request is authenticated,
-    // so once the tokens are gone the backend can no longer tell whose
-    // device this is (see push-service.ts's own comment).
-    await clearPushRegistration();
-    await keycloakLogout();
-    // Tokens alone are not enough: the persisted store and the query cache
-    // outlive them and would leak one deliverer's data into the next session.
+  /**
+   * Everything this device holds for the rider beyond the tokens: the
+   * persisted account store, the query cache, any live reset ticket and the
+   * realtime connection (authenticated as this rider at CONNECT time). Left
+   * behind, any of them would leak into the next account signed in here.
+   */
+  const dropLocalSession = useCallback(async () => {
+    await disconnectRealtime();
     useDriverStore.getState().clear();
-    // A password change started from Settings can leave a live reset ticket
-    // behind, and that must not outlive the session that created it.
     usePasswordResetStore.getState().clear();
     queryClient.clear();
     setState({ isAuthenticated: false, isLoading: false, user: null });
     setIsDriverResolved(false);
   }, [queryClient]);
 
+  const logoutFn = useCallback(async () => {
+    // Must run before the session is cleared — the request is authenticated,
+    // so once the tokens are gone the backend can no longer tell whose
+    // device this is (see push-service.ts's own comment).
+    await clearPushRegistration();
+    await keycloakLogout();
+    await dropLocalSession();
+  }, [dropLocalSession]);
+
+  // The server ended the session (refresh token rejected: revoked, expired,
+  // password changed elsewhere). Treat it as a sign-out, not just lost tokens.
+  useEffect(() => onSessionEnded(() => void dropLocalSession()), [dropLocalSession]);
+
   const refreshSession = useCallback(async (): Promise<boolean> => {
+    // A rejected refresh reaches `dropLocalSession` through onSessionEnded.
     const result = await refreshAccessToken();
-    if (!result.success) {
-      setState({ isAuthenticated: false, isLoading: false, user: null });
-    }
     return result.success;
   }, []);
 

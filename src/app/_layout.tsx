@@ -1,9 +1,10 @@
-import {
-  Poppins_400Regular,
-  Poppins_500Medium,
-  Poppins_600SemiBold,
-  Poppins_700Bold,
-} from '@expo-google-fonts/poppins';
+// Per-weight entry points: the package root would pull all 18 Poppins files
+// (italics, thin…) into the bundle; the app uses these five.
+import { Poppins_400Regular } from '@expo-google-fonts/poppins/400Regular';
+import { Poppins_500Medium } from '@expo-google-fonts/poppins/500Medium';
+import { Poppins_600SemiBold } from '@expo-google-fonts/poppins/600SemiBold';
+import { Poppins_700Bold } from '@expo-google-fonts/poppins/700Bold';
+import { Poppins_800ExtraBold } from '@expo-google-fonts/poppins/800ExtraBold';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
@@ -13,14 +14,15 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
+import { ToastHost } from '@/components/ui/toast';
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
 import { LocaleProvider } from '@/contexts/locale-context';
-import { ThemeProvider, useColors } from '@/contexts/theme-context';
 import { SessionProvider } from '@/features/session/session-context';
 import { usePushNotifications } from '@/hooks/use-push-notifications';
 import { queryClient, wireAppFocus } from '@/services/api/query-client';
 import { wireAppStateToConnection } from '@/services/realtime/stomp-client';
 import { usePasswordResetStore } from '@/store/password-reset-store';
+import { ThemeProvider, useColors } from '@/theme';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -128,18 +130,21 @@ function RootNavigator() {
         <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="edit-profile" options={{ animation: 'slide_from_right' }} />
       </Stack>
+      <ToastHost />
     </>
   );
 }
 
 export default function RootLayout() {
-  // The expo-font config plugin already bundles Poppins into native builds, so
-  // this resolves instantly there; it is what makes the fonts work in Expo Go.
+  // The expo-font config plugin already bundles Poppins into native builds,
+  // so this resolves instantly there; it is what makes the fonts work in Expo
+  // Go. The keys are the family names `theme/typography.ts` selects by.
   const [fontsLoaded] = useFonts({
     Poppins_400Regular,
     Poppins_500Medium,
     Poppins_600SemiBold,
     Poppins_700Bold,
+    Poppins_800ExtraBold,
   });
 
   useEffect(() => {

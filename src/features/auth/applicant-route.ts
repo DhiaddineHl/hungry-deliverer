@@ -2,6 +2,7 @@ import type { Href } from 'expo-router';
 
 import { sendPasswordResetCode } from '@/services/api/driver-service';
 import type { ApplicantLookup } from '@/services/api/types';
+import { useApplicantStore } from '@/store/applicant-store';
 import { usePasswordResetStore } from '@/store/password-reset-store';
 
 /**
@@ -31,8 +32,9 @@ export async function startActivation(email: string): Promise<Href> {
  * Where an identified address goes next. Shared by the identification screen
  * and the "under review" screen's status check, so both always agree.
  *
- * The address travels as a route param rather than in a store: it is not a
- * secret, and a param survives the screen being remounted by a reload.
+ * The address travels as a route param: it is not a secret, and a param
+ * survives the screen being remounted by a reload. The rejection verdict does
+ * not — any route can be opened by a link, so it goes to an in-memory store.
  */
 export function routeForApplicant(lookup: ApplicantLookup): Href {
   const { email } = lookup;
@@ -44,12 +46,16 @@ export function routeForApplicant(lookup: ApplicantLookup): Href {
     case 'PENDING':
       return { pathname: '/application-status', params: { email } };
     case 'REJECTED':
-      return {
-        pathname: '/register',
-        params: { email, reapply: '1', rejectionReason: lookup.rejectionReason ?? '' },
-      };
+      // The verdict stays in memory — see store/applicant-store.ts.
+      useApplicantStore.getState().setOutcome({
+        email,
+        rejected: true,
+        rejectionReason: lookup.rejectionReason,
+      });
+      return { pathname: '/register', params: { email } };
     case 'NOT_FOUND':
     default:
+      useApplicantStore.getState().setOutcome({ email, rejected: false });
       return { pathname: '/register', params: { email } };
   }
 }

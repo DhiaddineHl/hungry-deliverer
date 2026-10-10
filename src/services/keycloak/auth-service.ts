@@ -162,12 +162,40 @@ export async function exchangeAuthorizationCode(
 }
 
 /**
- * Refreshes the session. On failure the stored tokens are cleared so the app
- * drops to the login screen instead of retrying a dead session forever.
- * Rotated refresh tokens are persisted by saveTokens — without that, the
- * second refresh would fail when rotation is enabled on the realm.
+ * Listeners told when the refresh token is rejected — the session is over on
+ * the server, so the app must drop everything it holds for that rider, not
+ * just the tokens. `AuthProvider` subscribes and runs its sign-out cleanup.
  */
-export async function refreshAccessToken(): Promise<AuthResult> {
+const sessionEndedListeners = new Set<() => void>();
+
+export function onSessionEnded(listener: () => void): () => void {
+  sessionEndedListeners.add(listener);
+  return () => {
+    sessionEndedListeners.delete(listener);
+  };
+}
+
+/** The refresh in flight, shared by every caller that needs one meanwhile. */
+let refreshInFlight: Promise<AuthResult> | null = null;
+
+/**
+ * Refreshes the session. Single-flight: with refresh-token rotation on the
+ * realm, two parallel refreshes would spend the same token twice — Keycloak
+ * rejects the second and the rider is logged out for no reason. Concurrent
+ * callers (REST interceptor, STOMP reconnect, userinfo) share one request.
+ *
+ * On rejection the stored tokens are cleared and listeners are told, so the
+ * app drops to the login screen instead of retrying a dead session forever.
+ * Rotated refresh tokens are persisted by saveTokens.
+ */
+export function refreshAccessToken(): Promise<AuthResult> {
+  refreshInFlight ??= performRefresh().finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
+}
+
+async function performRefresh(): Promise<AuthResult> {
   try {
     const currentTokens = await getTokens();
     if (!currentTokens?.refreshToken) {
@@ -188,6 +216,7 @@ export async function refreshAccessToken(): Promise<AuthResult> {
 
     if (!response.ok) {
       await clearTokens();
+      sessionEndedListeners.forEach((listener) => listener());
       return { success: false, error: 'Session expired. Please log in again.' };
     }
 
@@ -195,6 +224,8 @@ export async function refreshAccessToken(): Promise<AuthResult> {
     await saveTokens(tokens);
     return { success: true, tokens };
   } catch (err) {
+    // A network failure is not a rejected session: keep the tokens and let
+    // the next call try again.
     return { success: false, error: networkErrorMessage(err) };
   }
 }
@@ -250,28 +281,37 @@ export async function logout(): Promise<void> {
   }
 }
 
-/** Local expiry check, so the app can refresh proactively instead of on a 401. */
-export function isTokenExpired(token: string): boolean {
+/**
+ * The payload of a JWT. JWTs are base64url without padding; `atob` needs
+ * standard base64 *with* padding, and Hermes throws without it — which made
+ * every token read as expired and forced a refresh on every request.
+ *
+ * This only reads claims for scheduling (expiry) and display. It does not
+ * verify the signature and must never be used to grant access: the backend
+ * validates every token it receives.
+ */
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
-    const payload = token.split('.')[1];
-    const decoded = atob(payload.replace(/-/g, '+').replace(/_/g, '/')); // base64url → base64
-    const { exp } = JSON.parse(decoded);
-    if (typeof exp !== 'number') return true;
-    return Date.now() >= exp * 1000;
+    const segment = token.split('.')[1];
+    if (!segment) return null;
+    const base64 = segment.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    const parsed: unknown = JSON.parse(atob(padded));
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
   } catch {
-    return true; // unparseable → treat as expired
+    return null;
   }
 }
 
-/** Realm roles carried by the access token (`realm_access.roles`). */
-export function rolesFromToken(accessToken: string): string[] {
-  try {
-    const payload = accessToken.split('.')[1];
-    const decoded = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
-    const parsed = JSON.parse(decoded);
-    const roles = parsed?.realm_access?.roles;
-    return Array.isArray(roles) ? roles : [];
-  } catch {
-    return [];
-  }
+/**
+ * Refresh this long before the real expiry, so a token never lapses between
+ * the check and the server reading it (request latency, clock drift).
+ */
+const EXPIRY_SKEW_MS = 30_000;
+
+/** Local expiry check, so the app can refresh proactively instead of on a 401. */
+export function isTokenExpired(token: string): boolean {
+  const exp = decodeJwtPayload(token)?.exp;
+  if (typeof exp !== 'number') return true; // unparseable → treat as expired
+  return Date.now() >= exp * 1000 - EXPIRY_SKEW_MS;
 }

@@ -1,152 +1,161 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
-import { LayoutAnimation, Platform, Pressable, ScrollView, StyleSheet, TextInput, UIManager, View } from 'react-native';
+import { LayoutAnimation, Linking, Pressable, ScrollView, View } from 'react-native';
 
-import { useLocale } from '@/contexts/locale-context';
-import { makeStyles } from '@/hooks/use-themed-styles';
-import { useColors } from '@/contexts/theme-context';
-import { PageShell } from '@/components/ui/page-shell';
-import { Card } from '@/components/ui/section';
+import { SecondaryButton } from '@/components/ui/button';
+import { Card, Divider, IconWell } from '@/components/ui/content';
+import { StateView } from '@/components/ui/feedback';
+import { Page } from '@/components/ui/page';
+import { FilterChip } from '@/components/ui/selection';
 import { Text } from '@/components/ui/text';
-import { Fonts, Radius, Spacing, tintColors } from '@/constants/theme';
-import { FAQ_CATEGORIES, FAQ_TOPICS, type FaqCategory, type FaqTopic } from '@/data/faqs';
-
-// Old-architecture Android needs this opt-in for LayoutAnimation; it is a no-op
-// (and the flag is absent) under the new architecture, hence the guard.
-if (Platform.OS === 'android') UIManager.setLayoutAnimationEnabledExperimental?.(true);
+import { TextField } from '@/components/ui/text-field';
+import { useLocale } from '@/contexts/locale-context';
+import { FAQ_CATEGORIES, FAQ_TOPICS, SUPPORT_PHONE, type FaqCategory, type FaqTopic } from '@/data/faqs';
+import { Icon, makeStyles } from '@/theme';
 
 /**
- * The help centre: a search box over the same copy the category chips filter,
- * and one accordion card per category.
+ * F1 — Help: a search over the same copy the topic chips filter, then one
+ * accordion card per category; a question opens its answer in place.
  *
- * A query searches questions and answers as well as titles, and while one is
- * typed it outranks the chip — someone who types "cash out" wants the answer,
- * not the intersection with whichever chip happened to be selected.
+ * A typed query outranks the chip: someone who types "withdraw" wants the
+ * answer, not its intersection with whichever chip happened to be selected.
  */
 export default function FaqsScreen() {
   const { t } = useLocale();
-  const colors = useColors();
   const styles = useStyles();
   const [query, setQuery] = useState('');
   const [topic, setTopic] = useState<FaqTopic>('guide');
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openCategory, setOpenCategory] = useState<string | null>(FAQ_CATEGORIES[0].id);
+  const [openQuestion, setOpenQuestion] = useState<string | null>(null);
 
-  // The search runs over translated copy, so it has to re-run when the
-  // language does — a French query cannot match the English catalogue.
+  // The search runs over translated copy, so it re-runs when the language does.
   const results = useMemo(() => filterCategories(t, query, topic), [t, query, topic]);
+  const searching = query.trim().length > 0;
 
-  const toggle = (id: string) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setOpenId((current) => (current === id ? null : id));
+  const animate = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  const toggleCategory = (id: string) => {
+    animate();
+    setOpenCategory((current) => (current === id ? null : id));
+  };
+  const toggleQuestion = (key: string) => {
+    animate();
+    setOpenQuestion((current) => (current === key ? null : key));
   };
 
   return (
-    <PageShell title={t('faqs.title')}>
-      <Text weight="semibold" size={15} color={colors.orange} style={styles.kicker}>
-        {t('faqs.helpCenter')}
-      </Text>
-      <Text weight="bold" size={18} style={styles.headline}>
+    <Page
+      title={t('faqs.title')}
+      bottomBar={
+        <SecondaryButton
+          label={t('faqs.contactSupport')}
+          icon="phone"
+          onPress={() => Linking.openURL(`tel:${SUPPORT_PHONE}`)}
+          style={styles.flex}
+        />
+      }>
+      <Text variant="title" accessibilityRole="header" style={styles.headline}>
         {t('faqs.headline')}
       </Text>
 
-      <View style={styles.search}>
-        <Ionicons name="search" size={20} color={colors.textSecondary} />
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder={t('faqs.searchPlaceholder')}
-          placeholderTextColor={colors.textMuted}
-          accessibilityLabel={t('faqs.searchPlaceholder')}
-          returnKeyType="search"
-          style={styles.searchInput}
-        />
-        {query ? (
-          <Pressable accessibilityRole="button" accessibilityLabel={t('faqs.clearSearch')} onPress={() => setQuery('')} hitSlop={8}>
-            <Ionicons name="close-circle" size={20} color={colors.textMuted} />
-          </Pressable>
-        ) : null}
-      </View>
+      <TextField
+        value={query}
+        onChangeText={setQuery}
+        placeholder={t('faqs.searchPlaceholder')}
+        accessibilityLabel={t('faqs.searchPlaceholder')}
+        leadingIcon="search"
+        returnKeyType="search"
+        containerStyle={styles.search}
+        trailing={
+          query ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('faqs.clearSearch')}
+              onPress={() => setQuery('')}
+              hitSlop={12}>
+              <Icon name="close" color="inkMuted" />
+            </Pressable>
+          ) : undefined
+        }
+      />
 
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chips}
-        // The chips run to the sheet's edge in the frame, so the row breaks out
-        // of the shell's padding and pays it back as content inset.
-        style={styles.chipRow}>
-        {FAQ_TOPICS.map((entry) => {
-          const active = !query && entry.id === topic;
-          return (
-            <Pressable
-              key={entry.id}
-              accessibilityRole="button"
-              accessibilityState={{ selected: active }}
-              onPress={() => setTopic(entry.id)}
-              style={[styles.chip, active && styles.chipActive]}>
-              <Ionicons
-                name={entry.icon}
-                size={18}
-                color={active ? colors.navy : colors.textSecondary}
-              />
-              <Text size={17} color={active ? colors.navy : colors.textSecondary}>
-                {t(entry.label)}
-              </Text>
-            </Pressable>
-          );
-        })}
+        // The chips run edge to edge: the row breaks out of the page gutter and
+        // pays it back as content inset.
+        style={styles.chipRow}
+        contentContainerStyle={styles.chips}>
+        {FAQ_TOPICS.map((entry) => (
+          <FilterChip
+            key={entry.id}
+            label={t(entry.label)}
+            icon={entry.icon}
+            selected={!searching && entry.id === topic}
+            onPress={() => {
+              setQuery('');
+              setTopic(entry.id);
+            }}
+          />
+        ))}
       </ScrollView>
 
-      {results.map((category) => (
-        <Card key={category.id} style={styles.category}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ expanded: openId === category.id }}
-            accessibilityLabel={t(`faqs.${category.id}`)}
-            onPress={() => toggle(category.id)}
-            style={styles.categoryHeader}>
-            <View style={[styles.tile, { backgroundColor: tintColors(colors, category.tint).background }]}>
-              <Ionicons
-                name={category.icon}
-                size={24}
-                color={tintColors(colors, category.tint).foreground}
-              />
-            </View>
-            <Text weight="bold" size={18} style={styles.categoryTitle}>
-              {t(`faqs.${category.id}`)}
-            </Text>
-            <Ionicons
-              name={openId === category.id ? 'chevron-up' : 'chevron-down'}
-              size={20}
-              color={colors.textSecondary}
-            />
-          </Pressable>
-
-          {openId === category.id ? (
-            <View style={styles.entries}>
-              {category.entries.map((entry) => (
-                <View key={entry.question} style={styles.entry}>
-                  <Text weight="semibold" size={15}>
-                    {t(entry.question)}
-                  </Text>
-                  <Text size={14} color={colors.textSecondary} style={styles.answer}>
-                    {t(entry.answer)}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
-        </Card>
-      ))}
-
       {results.length === 0 ? (
-        <View style={styles.empty}>
-          <Ionicons name="search-outline" size={32} color={colors.textMuted} />
-          <Text size={15} color={colors.textSecondary} style={styles.emptyText}>
-            {t('faqs.noResults', { query: query.trim() })}
-          </Text>
+        <StateView
+          icon="noResults"
+          title={t('faqs.noResultsTitle')}
+          body={t('faqs.noResults', { query: query.trim() })}
+          style={styles.empty}
+        />
+      ) : (
+        <View style={styles.categories}>
+          {results.map((category) => {
+            const open = searching || openCategory === category.id;
+            return (
+              <Card key={category.id}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: open }}
+                  onPress={() => toggleCategory(category.id)}
+                  disabled={searching}
+                  style={styles.categoryHeader}>
+                  <IconWell icon={category.icon} size={40} tone={category.highlighted ? 'primary' : 'neutral'} />
+                  <Text variant="rowTitle" style={styles.flex}>
+                    {t(`faqs.${category.id}`)}
+                  </Text>
+                  {!searching ? <Icon name={open ? 'chevronUp' : 'chevronDown'} size="row" /> : null}
+                </Pressable>
+
+                {open
+                  ? category.entries.map((entry) => {
+                      const key = entry.question;
+                      const answerOpen = searching || openQuestion === key;
+                      return (
+                        <View key={key}>
+                          <Divider />
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityState={{ expanded: answerOpen }}
+                            onPress={() => toggleQuestion(key)}
+                            style={styles.question}>
+                            <Text variant="chip" style={[styles.flex, styles.questionText]}>
+                              {t(entry.question)}
+                            </Text>
+                            <Icon name={answerOpen ? 'chevronUp' : 'chevronRight'} size="row" color="inkMuted" />
+                          </Pressable>
+                          {answerOpen ? (
+                            <Text variant="description" color="inkMuted" style={styles.answer}>
+                              {t(entry.answer)}
+                            </Text>
+                          ) : null}
+                        </View>
+                      );
+                    })
+                  : null}
+              </Card>
+            );
+          })}
         </View>
-      ) : null}
-    </PageShell>
+      )}
+    </Page>
   );
 }
 
@@ -166,97 +175,58 @@ function filterCategories(
     if (t(`faqs.${category.id}`).toLowerCase().includes(needle)) return [category];
     const entries = category.entries.filter(
       (entry) =>
-        t(entry.question).toLowerCase().includes(needle) ||
-        t(entry.answer).toLowerCase().includes(needle)
+        t(entry.question).toLowerCase().includes(needle) || t(entry.answer).toLowerCase().includes(needle)
     );
     return entries.length ? [{ ...category, entries }] : [];
   });
 }
 
-const useStyles = makeStyles((c) => ({
-  kicker: {
-    letterSpacing: 1.2,
+const useStyles = makeStyles((c, t) => ({
+  flex: {
+    flex: 1,
   },
   headline: {
-    marginTop: Spacing.one,
-    marginBottom: Spacing.four,
+    marginTop: 16,
   },
   search: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-    height: 56,
-    paddingHorizontal: Spacing.four,
-    borderRadius: Radius.lg,
-    backgroundColor: c.field,
-  },
-  searchInput: {
-    flex: 1,
-    fontFamily: Fonts.regular,
-    fontSize: 16,
-    color: c.text,
-    // Kills the extra vertical padding Android puts inside a bare TextInput,
-    // which otherwise pushes the placeholder off the row's centre line.
-    paddingVertical: 0,
+    marginTop: 16,
   },
   chipRow: {
-    marginHorizontal: -Spacing.five,
-    marginVertical: Spacing.four,
+    marginTop: 16,
+    marginHorizontal: -t.screenPadding,
     flexGrow: 0,
   },
   chips: {
-    gap: Spacing.three,
-    paddingHorizontal: Spacing.five,
+    gap: 8,
+    paddingHorizontal: t.screenPadding,
   },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    height: 48,
-    paddingHorizontal: Spacing.five,
-    borderRadius: Radius.pill,
-    backgroundColor: c.chip,
-  },
-  chipActive: {
-    backgroundColor: c.chipActive,
-  },
-  category: {
-    marginBottom: Spacing.four,
+  categories: {
+    marginTop: 16,
+    gap: 12,
   },
   categoryHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.four,
-    paddingVertical: Spacing.four,
+    gap: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
   },
-  tile: {
-    width: 48,
-    height: 48,
-    borderRadius: Radius.md,
+  question: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
   },
-  categoryTitle: {
-    flex: 1,
-  },
-  entries: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: c.border,
-    paddingVertical: Spacing.two,
-  },
-  entry: {
-    paddingVertical: Spacing.three,
-  },
-  answer: {
-    marginTop: Spacing.one,
+  questionText: {
     lineHeight: 20,
   },
-  empty: {
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingTop: Spacing.six,
+  answer: {
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    marginTop: -4,
   },
-  emptyText: {
-    textAlign: 'center',
+  empty: {
+    marginTop: 40,
   },
 }));

@@ -3,88 +3,59 @@ import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  useWindowDimensions,
-  View,
-} from 'react-native';
-import Animated, {
   interpolate,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withDelay,
   withTiming,
 } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useLocale } from '@/contexts/locale-context';
-import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
-import { makeStyles } from '@/hooks/use-themed-styles';
-import { useColors } from '@/contexts/theme-context';
-import { AuthBackdrop } from '@/components/auth/auth-backdrop';
-import { GoogleButton, OrDivider, TermsFooter } from '@/components/auth/auth-common';
-import { TextField } from '@/components/auth/text-field';
-import { PrimaryButton } from '@/components/ui/primary-button';
-import { Text } from '@/components/ui/text';
-import { Radius, Shadow, Spacing } from '@/constants/theme';
+import { AuthHeading, GoogleButton, OrDivider, TermsFooter } from '@/components/auth/auth-common';
+import { AuthLayout } from '@/components/auth/auth-layout';
+import { PrimaryButton } from '@/components/ui/button';
+import { ErrorBanner } from '@/components/ui/feedback';
+import { FormTextField } from '@/components/ui/text-field';
 import { NO_DELIVERER_ACCOUNT, useAuth, wasCancelled } from '@/contexts/auth-context';
+import { useLocale } from '@/contexts/locale-context';
 import { needsActivation, routeForApplicant, startActivation } from '@/features/auth/applicant-route';
 import { identificationSchema, type IdentificationValues } from '@/features/auth/schemas';
 import { lookupApplicant } from '@/services/api/driver-request-service';
 
-// The landing → login reveal plays only the first time the app is opened.
-// Kept at module scope so it survives remounts within a session.
+// The reveal plays only the first time the app is opened in a session. Kept at
+// module scope so it survives remounts.
 let introPlayed = false;
 
-const INTRO_DELAY = 650;
-const INTRO_DURATION = 850;
-
 /**
- * Identification — the single door into the app.
+ * Identification — the single door into the app (A1 Welcome).
  *
- * There is no "log in or apply?" choice to make: the deliverer types an
- * address, the backend says whether an account or an application already
- * stands behind it, and that answer picks the next screen (the password field,
- * the "under review" screen, or the application form with the address already
- * settled). Which is why the cross-links to the other
- * auth screen are gone from here and from the screens it leads to — every one
- * of them is reachable only through this one.
+ * There is no "log in or apply?" choice: the rider types an address, the
+ * backend says whether an account or an application stands behind it, and that
+ * answer picks the next screen (password, "under review", or the application
+ * form with the address settled).
  */
 export default function IdentificationScreen() {
   const { t } = useLocale();
-  const colors = useColors();
-  const styles = useStyles();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
+  const reduceMotion = useReducedMotion();
   const { loginWithGoogle } = useAuth();
   const [authError, setAuthError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
-  // The artwork's resting position (translateY 0) is the final login state, with
-  // the logo near the top. For the landing frame it starts pushed down — roughly
-  // centred — then rises into place.
-  const heroShift = height * 0.26;
-
-  const shouldPlayIntro = !introPlayed;
-  // 0 = landing (art centred, form off-screen), 1 = login (art up, form in view).
+  // The one orchestrated moment: on first launch the sheet rises onto the navy
+  // header. Off under Reduce Motion.
+  const shouldPlayIntro = !introPlayed && !reduceMotion;
   const progress = useSharedValue(shouldPlayIntro ? 0 : 1);
-
   useEffect(() => {
-    if (!shouldPlayIntro) return;
     introPlayed = true;
-    progress.value = withDelay(INTRO_DELAY, withTiming(1, { duration: INTRO_DURATION }));
+    if (!shouldPlayIntro) return;
+    progress.set(withDelay(350, withTiming(1, { duration: 600 })));
   }, [shouldPlayIntro, progress]);
 
-  const heroStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: interpolate(progress.value, [0, 1], [heroShift, 0]) }],
-  }));
-
-  const cardStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: interpolate(progress.value, [0, 1], [height, 0]) }],
-    opacity: interpolate(progress.value, [0, 0.4, 1], [0, 0, 1]),
+  const sheetStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.get(), [0, 0.5, 1], [0, 1, 1]),
+    transform: [{ translateY: interpolate(progress.get(), [0, 1], [80, 0]) }],
   }));
 
   const { control, handleSubmit } = useForm<IdentificationValues>({
@@ -98,14 +69,11 @@ export default function IdentificationScreen() {
     try {
       const email = values.email.trim().toLowerCase();
       // Four possible answers: an account (password), an application under
-      // review (status screen), a declined one (apply again) or nothing yet
-      // (apply) — see `routeForApplicant`.
+      // review (status), a declined one (apply again) or nothing yet (apply).
       const lookup = await lookupApplicant(email);
       router.push(needsActivation(lookup) ? await startActivation(email) : routeForApplicant(lookup));
     } catch (error) {
-      setAuthError(
-        error instanceof Error ? error.message : t('auth.errorServerUnreachable')
-      );
+      setAuthError(error instanceof Error ? error.message : t('auth.errorServerUnreachable'));
     } finally {
       setIsSubmitting(false);
     }
@@ -116,11 +84,9 @@ export default function IdentificationScreen() {
     setIsGoogleLoading(true);
     try {
       const result = await loginWithGoogle();
-      // Nothing to route on success: the root navigator reacts to the session
-      // appearing and sends the deliverer on (or to the code screen, for a
-      // realm that reports the address as unverified).
+      // Success needs no routing: the root navigator reacts to the session.
+      // Dismissing the browser is a choice, not a failure worth a banner.
       if (!result.success && !wasCancelled(result.error)) {
-        // Dismissing the browser is a choice, not a failure worth a red banner.
         setAuthError(
           result.error === NO_DELIVERER_ACCOUNT
             ? t('auth.errorNoDelivererAccount')
@@ -132,112 +98,37 @@ export default function IdentificationScreen() {
     }
   };
 
+  const busy = isSubmitting || isGoogleLoading;
+
   return (
-    <View style={styles.screen}>
-      <ThemedStatusBar surface="navy" />
-      <AuthBackdrop heroStyle={heroStyle} />
+    <AuthLayout sheetStyle={sheetStyle}>
+      <AuthHeading title={t('auth.welcome')} subtitle={t('auth.welcomeSubtitle')} />
 
-      <Animated.View style={[styles.cardWrap, cardStyle]}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.flex}>
-          <ScrollView
-            contentContainerStyle={[
-              styles.cardContent,
-              { paddingBottom: insets.bottom + Spacing.five },
-            ]}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            bounces={false}>
-            <View style={styles.heading}>
-              <Text weight="bold" size={24}>
-                {t('auth.welcome')}
-              </Text>
-              <Text size={15} color={colors.textSecondary} style={styles.subtitle}>
-                {t('auth.welcomeSubtitle')}
-              </Text>
-            </View>
+      {authError ? <ErrorBanner message={authError} /> : null}
 
-            {authError ? (
-              <View style={styles.errorBanner}>
-                <Text size={14} color={colors.danger}>
-                  {authError}
-                </Text>
-              </View>
-            ) : null}
+      <FormTextField
+        control={control}
+        name="email"
+        label={t('auth.email')}
+        placeholder={t('auth.emailPlaceholder')}
+        keyboardType="email-address"
+        autoComplete="email"
+        textContentType="emailAddress"
+        returnKeyType="go"
+        onSubmitEditing={handleSubmit(onSubmit)}
+        disabled={busy}
+      />
 
-            <TextField
-              control={control}
-              name="email"
-              label={t('auth.email')}
-              placeholder={t('auth.email')}
-              keyboardType="email-address"
-              autoComplete="email"
-              textContentType="emailAddress"
-              containerStyle={styles.field}
-            />
+      <PrimaryButton
+        label={isSubmitting ? t('common.sending') : t('common.continue')}
+        loading={isSubmitting}
+        disabled={isGoogleLoading}
+        onPress={handleSubmit(onSubmit)}
+      />
 
-            <PrimaryButton
-              label={isSubmitting ? t('common.sending') : t('common.continue')}
-              onPress={handleSubmit(onSubmit)}
-              disabled={isSubmitting || isGoogleLoading}
-              style={styles.submit}
-            />
-
-            <OrDivider />
-            <GoogleButton onPress={onGoogleLogin} disabled={isGoogleLoading || isSubmitting} />
-            <TermsFooter />
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </Animated.View>
-    </View>
+      <OrDivider />
+      <GoogleButton onPress={onGoogleLogin} loading={isGoogleLoading} disabled={isSubmitting} />
+      <TermsFooter />
+    </AuthLayout>
   );
 }
-
-const useStyles = makeStyles((c) => ({
-  screen: {
-    flex: 1,
-    backgroundColor: c.navy,
-  },
-  flex: {
-    flex: 1,
-  },
-  cardWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    // A definite height (not maxHeight): an auto-height absolute card leaves the
-    // ScrollView unbounded, so it sizes to its content and clips instead of
-    // scrolling. Shared with the password screen — one field either side of the
-    // step, so the card must not jump height between them.
-    height: '68%',
-    backgroundColor: c.card,
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
-    ...Shadow.card,
-  },
-  cardContent: {
-    paddingHorizontal: Spacing.five,
-    paddingTop: Spacing.six,
-  },
-  heading: {
-    alignItems: 'center',
-    marginBottom: Spacing.five,
-  },
-  subtitle: {
-    marginTop: Spacing.one,
-  },
-  errorBanner: {
-    padding: Spacing.three,
-    marginBottom: Spacing.four,
-    borderRadius: Radius.md,
-    backgroundColor: c.dangerSoft,
-  },
-  field: {
-    marginBottom: Spacing.five,
-  },
-  submit: {
-    marginBottom: Spacing.four,
-  },
-}));

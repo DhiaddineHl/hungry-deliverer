@@ -1,147 +1,168 @@
-import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, type LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   interpolate,
-  interpolateColor,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   withTiming,
-  type SharedValue,
 } from 'react-native-reanimated';
 
-import { useLocale } from '@/contexts/locale-context';
-import { makeStyles } from '@/hooks/use-themed-styles';
-import { useColors } from '@/contexts/theme-context';
+import { Spinner } from '@/components/ui/spinner';
 import { Text } from '@/components/ui/text';
-import { Fonts, Radius, Shadow } from '@/constants/theme';
-
-const TRACK_HEIGHT = 56;
-const KNOB_SIZE = 48;
-const PADDING = 4;
-/** Fraction of the track the knob must cross to fire. */
-const COMMIT_THRESHOLD = 0.75;
+import { Icon, makeStyles, useTheme } from '@/theme';
 
 type Props = {
   label: string;
+  /** Replaces the label while `confirming`. */
+  confirmingLabel: string;
   onConfirm: () => void;
-  /** Renders the fulfilled state from the "Delivery complete" frame. */
-  confirmed?: boolean;
-  /** Locks the knob in place and dims the track. */
-  disabled?: boolean;
-  trackWidth: number;
+  /** Outside the confirm radius: muted track, gestures ignored, helper shown. */
+  locked: boolean;
+  /** Shown under a locked slider ("Available within 200 m of the drop-off"). */
+  lockedHelper?: string;
+  /** The confirm is in flight: handle parked at the end, spinner in the label. */
+  confirming?: boolean;
 };
 
 function notifySuccess() {
   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 }
 
+/**
+ * The one gesture-confirmed action in the app (Confirm delivery). Drag the
+ * handle past 85 % of the track: it snaps home, a success haptic fires and
+ * `onConfirm` runs. Short of that it springs back. Screen-reader users get it
+ * as a plain button with an `activate` action.
+ */
 export function SlideToConfirm({
   label,
+  confirmingLabel,
   onConfirm,
-  confirmed = false,
-  disabled = false,
-  trackWidth,
+  locked,
+  lockedHelper,
+  confirming = false,
 }: Props) {
-  const { t } = useLocale();
-  const colors = useColors();
+  const { size, motion } = useTheme();
   const styles = useStyles();
-  const maxTravel = Math.max(trackWidth - KNOB_SIZE - PADDING * 2, 1);
-  const offset: SharedValue<number> = useSharedValue(0);
+  const [trackWidth, setTrackWidth] = useState(0);
+  const { h, handle, inset } = size.slideToConfirm;
+  const maxTravel = Math.max(trackWidth - handle - inset * 2, 1);
+  const offset = useSharedValue(0);
 
+  // Parked at the end while confirming; back to the start if it fails.
   useEffect(() => {
-    offset.value = withTiming(confirmed ? maxTravel : 0, { duration: 260 });
-  }, [confirmed, maxTravel, offset]);
+    offset.set(confirming ? withTiming(maxTravel, { duration: 120 }) : withSpring(0, { damping: 18, stiffness: 220 }));
+  }, [confirming, maxTravel, offset]);
+
+  const commit = () => {
+    notifySuccess();
+    onConfirm();
+  };
 
   const pan = Gesture.Pan()
-    .enabled(!confirmed && !disabled)
+    .enabled(!locked && !confirming && trackWidth > 0)
     .onChange((event) => {
-      offset.value = Math.min(Math.max(offset.value + event.changeX, 0), maxTravel);
+      offset.set(Math.min(Math.max(offset.get() + event.changeX, 0), maxTravel));
     })
     .onEnd(() => {
-      if (offset.value >= maxTravel * COMMIT_THRESHOLD) {
-        offset.value = withTiming(maxTravel, { duration: 120 });
-        runOnJS(notifySuccess)();
-        runOnJS(onConfirm)();
+      if (offset.get() >= maxTravel * motion.slideThreshold) {
+        offset.set(withTiming(maxTravel, { duration: 120 }));
+        runOnJS(commit)();
       } else {
-        offset.value = withSpring(0, { damping: 18, stiffness: 220 });
+        offset.set(withSpring(0, { damping: 18, stiffness: 220 }));
       }
     });
 
-  const knobStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: offset.value }],
-  }));
-
-  const fillStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(offset.value, [0, maxTravel], [0, 1]),
-  }));
-
+  const handleStyle = useAnimatedStyle(() => ({ transform: [{ translateX: offset.get() }] }));
+  // The label fades as the handle passes over it, so the two never overlap.
   const labelStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(
-      offset.value,
-      [0, maxTravel * 0.6],
-      [colors.textMuted, colors.onNavy],
-    ),
+    opacity: interpolate(offset.get(), [0, maxTravel * 0.5], [1, 0.15], 'clamp'),
   }));
+
+  const onLayout = (event: LayoutChangeEvent) => setTrackWidth(event.nativeEvent.layout.width);
 
   return (
-    <View style={[styles.track, { width: trackWidth }, disabled && styles.disabled]}>
-      <Animated.View style={[styles.fill, fillStyle]} pointerEvents="none" />
-
-      <Animated.Text
-        style={[styles.label, labelStyle]}
-        accessibilityRole="text"
-        pointerEvents="none">
-        {label}
-      </Animated.Text>
-
-      <GestureDetector gesture={pan}>
-        <Animated.View
-          accessibilityRole="adjustable"
-          accessibilityLabel={label}
-          accessibilityHint={t('delivery.slideToConfirm')}
-          accessibilityState={{ disabled }}
-          style={[styles.knob, knobStyle]}>
-          <Ionicons name="arrow-forward" size={22} color={colors.onNavy} />
+    <View style={styles.container}>
+      <View
+        onLayout={onLayout}
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityHint={locked ? lockedHelper : undefined}
+        accessibilityState={{ disabled: locked, busy: confirming }}
+        accessibilityActions={[{ name: 'activate' }]}
+        onAccessibilityAction={(event) => {
+          if (event.nativeEvent.actionName === 'activate' && !locked && !confirming) commit();
+        }}
+        style={[styles.track, { height: h }, locked ? styles.trackLocked : styles.trackReady]}>
+        <Animated.View style={[styles.labelRow, labelStyle]} pointerEvents="none">
+          {confirming ? <Spinner tone="onInk" /> : null}
+          <Text variant="button" color={locked ? 'inkMuted' : 'onInk'} numberOfLines={1}>
+            {confirming ? confirmingLabel : label}
+          </Text>
         </Animated.View>
-      </GestureDetector>
+
+        <GestureDetector gesture={pan}>
+          <Animated.View
+            style={[
+              styles.handle,
+              { width: handle, height: handle, top: inset, left: inset },
+              locked && styles.handleLocked,
+              handleStyle,
+            ]}>
+            <Icon name="slide" size="nav" color={locked ? 'inkMuted' : 'ink'} />
+          </Animated.View>
+        </GestureDetector>
+      </View>
+
+      {locked && lockedHelper ? (
+        <Text variant="caption" color="inkMuted" align="center" style={styles.helper}>
+          {lockedHelper}
+        </Text>
+      ) : null}
     </View>
   );
 }
 
-const useStyles = makeStyles((c) => ({
+const useStyles = makeStyles((c, t) => ({
+  container: {
+    gap: 6,
+  },
   track: {
-    height: TRACK_HEIGHT,
-    borderRadius: Radius.pill,
-    backgroundColor: c.field,
+    borderRadius: t.radius.thumb,
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  disabled: {
-    opacity: 0.5,
+  trackReady: {
+    backgroundColor: c.ink,
   },
-  fill: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: c.orange,
+  trackLocked: {
+    backgroundColor: c.surfaceSunken,
   },
-  label: {
-    textAlign: 'center',
-    fontFamily: Fonts.semibold,
-    fontSize: 17,
-  },
-  knob: {
-    position: 'absolute',
-    left: PADDING,
-    width: KNOB_SIZE,
-    height: KNOB_SIZE,
-    borderRadius: Radius.pill,
-    backgroundColor: c.orange,
+  labelRow: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    ...Shadow.pill,
+    gap: 10,
+    paddingLeft: 40,
+    paddingRight: 12,
+  },
+  handle: {
+    position: 'absolute',
+    borderRadius: t.radius.control,
+    backgroundColor: c.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  handleLocked: {
+    borderWidth: 1.5,
+    borderColor: c.outline,
+  },
+  helper: {
+    fontFamily: t.typography.description.fontFamily,
   },
 }));

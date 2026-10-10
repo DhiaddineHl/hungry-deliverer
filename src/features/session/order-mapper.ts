@@ -70,6 +70,8 @@ export function toSessionOrder(offer: DeliveryOffer, courierPosition: LatLng): O
     orderId: offer.orderId,
     deliveryId: offer.deliveryId ?? null,
     totalTnd: offer.total ?? 0,
+    riderEarningsTnd: typeof offer.driverEarnings === 'number' ? offer.driverEarnings : null,
+    paymentMethod: paymentMethodOf(offer.paymentMethod),
     durationMinutes: etaToStore + etaToCustomer,
     distanceKm: offer.distanceKm ?? 0,
     minutesToPickup: etaToStore,
@@ -119,6 +121,13 @@ function areaOf(address: string | null | undefined): string {
     .filter(Boolean);
   if (parts.length === 0) return 'Customer area';
   return parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+}
+
+function paymentMethodOf(value: string | null | undefined): Order['paymentMethod'] {
+  const normalized = value?.trim().toUpperCase();
+  if (normalized === 'CASH') return 'cash';
+  if (normalized === 'ONLINE' || normalized === 'CARD') return 'online';
+  return null;
 }
 
 export function clockTime(epochMs: number): string {

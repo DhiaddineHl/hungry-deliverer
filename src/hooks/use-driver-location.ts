@@ -85,7 +85,7 @@ export interface UseDriverLocationResult {
 
 function report(driverId: string, position: LatLng) {
   reportDriverLocation(driverId, position.latitude, position.longitude).catch((error) => {
-    console.warn('[Location] Could not report position:', error);
+    if (__DEV__) console.warn('[Location] Could not report position:', error);
   });
 }
 
