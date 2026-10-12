@@ -1,26 +1,15 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AuthHeading } from '@/components/auth/auth-common';
+import { AuthLayout } from '@/components/auth/auth-layout';
+import { CodeEntry } from '@/components/auth/code-entry';
+import { type OtpInputHandle } from '@/components/auth/otp-input';
+import { PrimaryButton, TextLink } from '@/components/ui/button';
+import { ErrorBanner, InfoNote, StateView } from '@/components/ui/feedback';
 import { useLocale } from '@/contexts/locale-context';
-import { ThemedStatusBar } from '@/components/ui/themed-status-bar';
-import { makeStyles } from '@/hooks/use-themed-styles';
-import { useColors } from '@/contexts/theme-context';
-import { AuthBackdrop } from '@/components/auth/auth-backdrop';
-import { TermsFooter } from '@/components/auth/auth-common';
-import { OtpInput, type OtpInputHandle } from '@/components/auth/otp-input';
-import { PrimaryButton } from '@/components/ui/primary-button';
-import { Text } from '@/components/ui/text';
-import { Radius, Shadow, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
+import { makeStyles } from '@/theme';
 import { isApiError } from '@/services/api/client';
 import { confirmVerificationCode, sendVerificationCode } from '@/services/api/driver-service';
 import { usePendingVerificationStore } from '@/store/pending-verification-store';
@@ -43,10 +32,8 @@ const DEFAULT_RESEND_COOLDOWN = 60;
 
 export default function VerificationScreen() {
   const { t } = useLocale();
-  const colors = useColors();
   const styles = useStyles();
   const params = useLocalSearchParams<{ email?: string }>();
-  const insets = useSafeAreaInsets();
   const { user, isAuthenticated, login, reloadUser } = useAuth();
   const pending = usePendingVerificationStore();
   const clearPending = pending.clear;
@@ -184,9 +171,7 @@ export default function VerificationScreen() {
           // the moment we leave; the honest move is to send them to the login
           // screen rather than pretend the flow can continue.
           clearPending();
-          setError(
-            `${result.error ?? t('verification.errorSignIn')} — your email is verified, please log in to continue.`
-          );
+          setError(`${result.error ?? t('verification.errorSignIn')}. ${t('verification.verifiedLogIn')}`);
           return;
         }
         clearPending();
@@ -219,9 +204,7 @@ export default function VerificationScreen() {
 
   const greeting = useMemo(
     () =>
-      pending.firstName
-        ? t('verification.greeting', { name: pending.firstName })
-        : t('verification.sentCode'),
+      pending.firstName ? t('verification.greeting', { name: pending.firstName }) : t('verification.sentCode'),
     [pending.firstName, t]
   );
 
@@ -229,205 +212,55 @@ export default function VerificationScreen() {
   // session or param supplied an address.
   if (!email) {
     return (
-      <View style={styles.screen}>
-        <ThemedStatusBar surface="navy" />
-        <AuthBackdrop />
-        <View style={styles.cardWrap}>
-          <View style={styles.emptyState}>
-            <Text weight="bold" size={22} style={styles.centered}>
-              {t('verification.nothingToVerify')}
-            </Text>
-            <Text size={15} color={colors.textSecondary} style={styles.emptyBody}>
-              We do not know which email to confirm. Sign in and we will pick the verification back
-              up.
-            </Text>
-            <PrimaryButton
-              label={t('verification.goToLogin')}
-              onPress={() => router.replace('/')}
-              style={styles.emptyButton}
-            />
-          </View>
-        </View>
-      </View>
+      <AuthLayout>
+        <StateView icon="mail" title={t('verification.nothingToVerify')} body={t('verification.nothingToVerifyBody')}>
+          <PrimaryButton label={t('verification.goToLogin')} onPress={() => router.replace('/')} />
+        </StateView>
+      </AuthLayout>
     );
   }
 
   return (
-    <View style={styles.screen}>
-      <ThemedStatusBar surface="navy" />
-      <AuthBackdrop />
+    <AuthLayout>
+      <AuthHeading title={t('verification.title')} subtitle={`${greeting} ${email}`} />
 
-      <View style={styles.cardWrap}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.flex}>
-          <ScrollView
-            contentContainerStyle={[
-              styles.cardContent,
-              { paddingBottom: insets.bottom + Spacing.five },
-            ]}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            bounces={false}>
-            <View style={styles.heading}>
-              <Text weight="bold" size={24}>
-                {t('verification.title')}
-              </Text>
-              <Text size={15} color={colors.textSecondary} style={styles.subtitle}>
-                {greeting}
-              </Text>
-              <Text weight="semibold" size={15} style={styles.headingEmail}>
-                {email}
-              </Text>
-            </View>
+      {notice && !error ? <InfoNote>{notice}</InfoNote> : null}
+      {error ? <ErrorBanner message={error} /> : null}
 
-            <Text weight="semibold" size={15} style={styles.codeLabel}>
-              Code
-            </Text>
+      <CodeEntry
+        ref={otpRef}
+        code={code}
+        onChange={handleCodeChange}
+        editable={!isVerifying}
+        error={!!error}
+        secondsLeft={timer}
+        resending={isResending}
+        onResend={handleResend}
+      />
 
-            <OtpInput ref={otpRef} value={code} onChange={handleCodeChange} editable={!isVerifying} />
+      <PrimaryButton
+        label={isVerifying ? t('verification.verifying') : t('verification.verify')}
+        loading={isVerifying}
+        onPress={handleVerify}
+        disabled={!isComplete || isResending}
+      />
 
-            {error ? (
-              <View style={styles.errorBanner}>
-                <Text size={14} color={colors.danger}>
-                  {error}
-                </Text>
-              </View>
-            ) : null}
-
-            {notice && !error ? (
-              <View style={styles.noticeBanner}>
-                <Text size={14} color={colors.navy}>
-                  {notice}
-                </Text>
-              </View>
-            ) : null}
-
-            <View style={styles.resendRow}>
-              {isResending ? (
-                <ActivityIndicator size="small" color={colors.orange} />
-              ) : (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t('verification.resend')}
-                  onPress={handleResend}
-                  disabled={timer > 0}
-                  hitSlop={8}>
-                  <Text size={14} color={timer > 0 ? colors.textMuted : colors.orange}>
-                    {timer > 0 ? `Resend in ${timer}s` : 'Resend'}
-                  </Text>
-                </Pressable>
-              )}
-            </View>
-
-            <PrimaryButton
-              label={isVerifying ? 'VERIFYING…' : 'VERIFY'}
-              onPress={handleVerify}
-              disabled={!isComplete || isVerifying || isResending}
-              style={styles.submit}
-            />
-
-            {/* Only meaningful before a session exists: once signed in, the
-                address is the account and cannot be swapped from here. */}
-            {!isAuthenticated ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t('verification.useDifferentEmail')}
-                onPress={handleChangeEmail}
-                hitSlop={8}>
-                <Text size={14} color={colors.textSecondary} style={styles.changeEmail}>
-                  {t('verification.wrongEmail')}
-                </Text>
-              </Pressable>
-            ) : null}
-
-            <TermsFooter />
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </View>
-    </View>
+      {/* Only meaningful before a session exists: once signed in, the address
+          is the account and cannot be swapped from here. */}
+      {!isAuthenticated ? (
+        <TextLink
+          label={t('verification.wrongEmail')}
+          accessibilityLabel={t('verification.useDifferentEmail')}
+          onPress={handleChangeEmail}
+          style={styles.centered}
+        />
+      ) : null}
+    </AuthLayout>
   );
 }
 
-const useStyles = makeStyles((c) => ({
-  screen: {
-    flex: 1,
-    backgroundColor: c.navy,
-  },
-  flex: {
-    flex: 1,
-  },
-  cardWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    // A definite height (not maxHeight): an auto-height absolute card leaves the
-    // ScrollView unbounded, so it sizes to its content and clips instead of
-    // scrolling. Same note as the login and sign-up screens.
-    height: '72%',
-    backgroundColor: c.card,
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
-    ...Shadow.card,
-  },
-  cardContent: {
-    paddingHorizontal: Spacing.five,
-    paddingTop: Spacing.six,
-  },
-  heading: {
-    alignItems: 'center',
-    marginBottom: Spacing.five,
-  },
-  subtitle: {
-    marginTop: Spacing.one,
-    textAlign: 'center',
-  },
-  headingEmail: {
-    marginTop: Spacing.one,
-  },
-  codeLabel: {
-    marginBottom: Spacing.two,
-  },
-  errorBanner: {
-    padding: Spacing.three,
-    marginBottom: Spacing.three,
-    borderRadius: Radius.md,
-    backgroundColor: c.dangerSoft,
-  },
-  noticeBanner: {
-    padding: Spacing.three,
-    marginBottom: Spacing.three,
-    borderRadius: Radius.md,
-    backgroundColor: c.orangeSoft,
-  },
-  resendRow: {
-    alignSelf: 'flex-end',
-    minHeight: 20,
-    justifyContent: 'center',
-    marginBottom: Spacing.five,
-  },
-  submit: {
-    marginBottom: Spacing.four,
-  },
-  changeEmail: {
-    textAlign: 'center',
-    textDecorationLine: 'underline',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.five,
-  },
+const useStyles = makeStyles(() => ({
   centered: {
-    textAlign: 'center',
-  },
-  emptyBody: {
-    marginTop: Spacing.two,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  emptyButton: {
-    marginTop: Spacing.five,
+    alignSelf: 'center',
   },
 }));

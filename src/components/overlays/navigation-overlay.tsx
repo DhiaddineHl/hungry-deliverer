@@ -1,24 +1,19 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useLocale } from '@/contexts/locale-context';
-import { makeStyles } from '@/hooks/use-themed-styles';
-import { useColors } from '@/contexts/theme-context';
+import { SecondaryButton } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
-import { Radius, Shadow, Spacing } from '@/constants/theme';
+import { useLocale } from '@/contexts/locale-context';
+import { formatDuration } from '@/features/format';
 import { maneuverIcon } from '@/features/navigation/maneuver';
 import type { TurnByTurn } from '@/features/navigation/use-turn-by-turn';
+import { Icon, makeStyles } from '@/theme';
 
-/** Rounds to a friendly "200 m" / "1.4 km" the way a maps app would. */
+/** Rounds to a friendly "200 m" / "1,4 km" the way a maps app would. */
 function formatDistance(meters: number): string {
-  if (meters >= 1000) return `${(meters / 1000).toFixed(1)} km`;
+  if (meters >= 1000) return `${(meters / 1000).toFixed(1).replace('.', ',')} km`;
   return `${Math.max(0, Math.round(meters / 10) * 10)} m`;
-}
-
-function formatDuration(seconds: number): string {
-  return `${Math.max(1, Math.round(seconds / 60))} min`;
 }
 
 type Props = {
@@ -26,79 +21,82 @@ type Props = {
   onExit: () => void;
 };
 
-/** In-app turn-by-turn HUD: manoeuvre banner up top, trip summary + exit below. */
+/**
+ * In-app turn-by-turn HUD. The manoeuvre card floats under the status bar in
+ * the map's own chrome style (white, floating shadow); the trip summary and the
+ * End button sit in a sheet at the bottom.
+ */
 export function NavigationOverlay({ guidance, onExit }: Props) {
   const { t } = useLocale();
-  const colors = useColors();
   const styles = useStyles();
   const insets = useSafeAreaInsets();
 
   return (
     <>
-      <Animated.View
-        entering={FadeIn}
-        exiting={FadeOut}
-        style={[styles.banner, { paddingTop: insets.top + Spacing.three }]}>
-        <View style={styles.maneuver}>
-          <Ionicons name={maneuverIcon(guidance.maneuver)} size={36} color={colors.onNavy} />
+      <Animated.View entering={FadeIn} exiting={FadeOut} style={[styles.banner, { top: insets.top + 6 }]}>
+        <View style={styles.maneuverWell}>
+          <Icon name={maneuverIcon(guidance.maneuver)} size={28} color="onInk" />
+        </View>
+        <View style={styles.bannerText}>
           {!guidance.arrived ? (
-            <Text weight="bold" size={24} color={colors.onNavy}>
+            <Text variant="heading" tabular>
               {formatDistance(guidance.distanceToManeuver)}
             </Text>
           ) : null}
+          <Text variant="itemLabel" color="inkMuted" numberOfLines={2}>
+            {guidance.instruction}
+          </Text>
         </View>
-        <Text weight="semibold" size={17} color={colors.onNavy} style={styles.instruction}>
-          {guidance.instruction}
-        </Text>
       </Animated.View>
 
       <Animated.View
         entering={FadeIn}
         exiting={FadeOut}
-        style={[styles.footer, { paddingBottom: insets.bottom + Spacing.four }]}>
+        style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.summary}>
-          <Text weight="bold" size={20} color={colors.text}>
-            {formatDuration(guidance.remainingSeconds)}
+          <Text variant="heading" tabular>
+            {formatDuration(guidance.remainingSeconds / 60)}
           </Text>
-          <Text weight="medium" size={14} color={colors.textSecondary}>
-            {formatDistance(guidance.remainingMeters)} remaining
+          <Text variant="meta" color="inkMuted" tabular>
+            {t('delivery.remaining', { distance: formatDistance(guidance.remainingMeters) })}
           </Text>
         </View>
-        <Pressable
-          accessibilityRole="button"
+        <SecondaryButton
+          label={t('delivery.end')}
+          icon="close"
           accessibilityLabel={t('delivery.endNavigation')}
           onPress={onExit}
-          style={({ pressed }) => [styles.exit, pressed && styles.pressed]}>
-          <Ionicons name="close" size={22} color={colors.onNavy} />
-          <Text weight="semibold" size={15} color={colors.onNavy}>
-            End
-          </Text>
-        </Pressable>
+          style={styles.exit}
+        />
       </Animated.View>
     </>
   );
 }
 
-const useStyles = makeStyles((c) => ({
+const useStyles = makeStyles((c, t) => ({
   banner: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: c.navy,
-    paddingHorizontal: Spacing.five,
-    paddingBottom: Spacing.four,
-    borderBottomLeftRadius: Radius.lg,
-    borderBottomRightRadius: Radius.lg,
-    ...Shadow.card,
-  },
-  maneuver: {
+    left: t.chromePadding,
+    right: t.chromePadding,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.three,
+    gap: 14,
+    backgroundColor: c.surface,
+    borderRadius: t.radius.card,
+    padding: 14,
+    ...t.shadow.floatingButton,
   },
-  instruction: {
-    marginTop: Spacing.two,
+  maneuverWell: {
+    width: 52,
+    height: 52,
+    borderRadius: t.radius.field,
+    backgroundColor: c.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bannerText: {
+    flex: 1,
+    gap: 2,
   },
   footer: {
     position: 'absolute',
@@ -108,27 +106,18 @@ const useStyles = makeStyles((c) => ({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: c.card,
-    paddingHorizontal: Spacing.five,
-    paddingTop: Spacing.four,
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
-    ...Shadow.card,
+    gap: 16,
+    backgroundColor: c.surface,
+    paddingHorizontal: t.screenPadding,
+    paddingTop: 20,
+    borderTopLeftRadius: t.radius.sheet,
+    borderTopRightRadius: t.radius.sheet,
+    ...t.shadow.sheet,
   },
   summary: {
     gap: 2,
   },
   exit: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    backgroundColor: c.pin,
-    paddingHorizontal: Spacing.five,
-    paddingVertical: Spacing.three,
-    borderRadius: Radius.pill,
-    ...Shadow.pill,
-  },
-  pressed: {
-    opacity: 0.85,
+    minWidth: 120,
   },
 }));

@@ -1,4 +1,4 @@
-import { LightColors } from '@/constants/theme';
+import { palette } from '@/theme/colors';
 import { isApiError } from '@/services/api/client';
 import {
   registerDriverDevice,
@@ -76,7 +76,7 @@ async function ensureAndroidChannel(): Promise<void> {
     // The channel's LED colour is registered with Android once, outside React,
     // so it cannot follow the in-app theme — and it should not: it is the brand
     // orange, which is the same in both palettes.
-    lightColor: LightColors.orange,
+    lightColor: palette.orange,
   });
 }
 
@@ -157,6 +157,6 @@ export async function clearPushRegistration(): Promise<void> {
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId: id });
     await unregisterDriverDevice(token);
   } catch (error) {
-    console.warn('[Push] Could not unregister this device on sign-out:', error);
+    if (__DEV__) console.warn('[Push] Could not unregister this device on sign-out:', error);
   }
 }

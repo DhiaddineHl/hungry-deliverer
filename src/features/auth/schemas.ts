@@ -44,7 +44,7 @@ export type ForgotPasswordValues = z.infer<typeof forgotPasswordSchema>;
 
 /**
  * The last step of a reset: the new password, typed twice. The eight-character
- * floor is `registerSchema`'s, and the backend's `DriverPasswordResetService`
+ * floor is the one sign-up used to enforce, and the backend's `DriverPasswordResetService`
  * holds the same line — a reset must not be a way to end up with a weaker
  * password than sign-up would have allowed.
  */
@@ -81,11 +81,15 @@ export const MOTORIZED_VEHICLES: readonly string[] = [
 ];
 
 /**
- * The rest of the sign-up form. No `email`: identification already settled the
- * address and hands it over as a route param, so the screen shows it back
- * rather than asking for it again.
+ * The deliverer application form. No `email`: identification already settled
+ * the address and hands it over as a route param. No password either — the
+ * account is only created when staff approve the application, and the
+ * deliverer chooses a password then (the "set my password" flow).
+ *
+ * The documents are not part of this schema: they are local files held by the
+ * screen and uploaded after the application is created, one call each.
  */
-export const registerSchema = z
+export const applicationSchema = z
   .object({
     firstName: z.string().min(1, 'validation.firstNameRequired'),
     lastName: z.string().min(1, 'validation.lastNameRequired'),
@@ -93,24 +97,17 @@ export const registerSchema = z
       .string()
       .min(1, 'validation.phoneRequired')
       .regex(/^[0-9\s]{6,}$/, 'validation.phoneInvalid'),
-    password: z.string().min(8, 'validation.passwordTooShort'),
-    verifyPassword: z.string().min(1, 'validation.passwordConfirm'),
-    // The class the deliverer signs up with. The backend turns it into the
-    // Vehicle assigned to the new driver AND into the VEHICLE_<CLASS> realm
-    // role on the Keycloak account, so it is required at registration.
+    // Becomes the Vehicle of the approved driver AND the VEHICLE_<CLASS> realm
+    // role on their Keycloak account.
     vehicleType: z.enum(REGISTRABLE_VEHICLE_TYPES, {
       errorMap: () => ({ message: 'validation.vehicleRequired' }),
     }),
     licensePlate: z.string().optional(),
     licenseNumber: z.string().optional(),
   })
-  .refine((values) => values.password === values.verifyPassword, {
-    message: 'validation.passwordsDoNotMatch',
-    path: ['verifyPassword'],
-  })
   .refine(
     (values) => !MOTORIZED_VEHICLES.includes(values.vehicleType) || !!values.licensePlate?.trim(),
     { message: 'validation.licensePlateRequired', path: ['licensePlate'] }
   );
 
-export type RegisterValues = z.infer<typeof registerSchema>;
+export type ApplicationValues = z.infer<typeof applicationSchema>;

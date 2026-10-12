@@ -3,16 +3,16 @@ import { StyleSheet } from 'react-native';
 import MapView, { PROVIDER_GOOGLE, Polyline } from 'react-native-maps';
 
 import { DARK_MAP_STYLE } from '@/components/map/dark-map-style';
-import { useTheme } from '@/contexts/theme-context';
-import { EtaBadge } from '@/components/map/eta-badge';
+import { LIGHT_MAP_STYLE } from '@/components/map/light-map-style';
+import { EtaChip, MapMarker, RiderDot } from '@/components/map/markers';
 import { NavPuck } from '@/components/map/nav-puck';
-import { CourierPuck, DestinationPin, OriginDot } from '@/components/map/route-endpoints';
 import { SignalPulse } from '@/components/map/signal-pulse';
 import { INITIAL_REGION } from '@/data/mock';
 import type { MapFocus } from '@/features/session/map-focus';
 import type { LatLng } from '@/features/session/types';
+import { useTheme } from '@/theme';
 
-/** Active turn-by-turn overlay: the fetched route plus the moving courier. */
+/** Active turn-by-turn overlay: the fetched route plus the moving rider. */
 export type NavOverlay = {
   path: LatLng[];
   position: LatLng;
@@ -20,9 +20,8 @@ export type NavOverlay = {
 };
 
 export type DeliveryMapHandle = {
-  /** Re-centre on the courier — the crosshair FAB on the Finding Orders frame. */
+  /** Re-centre on the rider — the locate button. */
   recenter: () => void;
-  /** Pan to an arbitrary point. */
   focusOn: (coordinate: LatLng) => void;
 };
 
@@ -31,29 +30,24 @@ type Props = {
   focus: MapFocus;
   /** The device's real position, or `null` until the first GPS fix. */
   location: LatLng | null;
-  /** `location` with the demo fallback — what routes and recentring anchor on. */
+  /** `location` with the demo fallback — what recentring anchors on. */
   courier: LatLng;
-  /** Height of whatever overlay covers the bottom of the map, so routes stay visible. */
+  /** Height of the sheet covering the bottom of the map, so routes stay visible. */
   bottomInset: number;
-  mapType: 'standard' | 'hybrid';
-  /** When set, the map follows the courier in a tilted, heading-up nav camera. */
+  /** When set, the map follows the rider in a tilted, heading-up camera. */
   navigation?: NavOverlay | null;
-  /** Rings ripple out from the courier — on while the driver is online and waiting for an offer. */
+  /** Orange rings ripple out from the rider while looking for orders. */
   pulsing?: boolean;
 };
 
-const TOP_INSET = 140;
+/**
+ * Markers and routes are kept clear of the floating top bar and the sheet:
+ * framing uses edge padding of 140 at the top, 40 at the sides and the sheet's
+ * height at the bottom (DRIVER_APP.md §3).
+ */
+const EDGE = { top: 140, side: 40 };
 
-export function DeliveryMap({
-  ref,
-  focus,
-  location,
-  courier,
-  bottomInset,
-  mapType,
-  navigation,
-  pulsing = false,
-}: Props) {
+export function DeliveryMap({ ref, focus, location, courier, bottomInset, navigation, pulsing = false }: Props) {
   const { colors, isDark } = useTheme();
   const mapRef = useRef<MapView>(null);
   const [isReady, setIsReady] = useState(false);
@@ -63,17 +57,14 @@ export function DeliveryMap({
   const navHeading = navigation?.heading;
 
   const focusOn = useCallback((coordinate: LatLng) => {
-    mapRef.current?.animateToRegion(
-      { ...coordinate, latitudeDelta: 0.012, longitudeDelta: 0.01 },
-      500,
-    );
+    mapRef.current?.animateToRegion({ ...coordinate, latitudeDelta: 0.012, longitudeDelta: 0.01 }, 500);
   }, []);
 
   const recenter = useCallback(() => focusOn(courier), [courier, focusOn]);
 
   useImperativeHandle(ref, () => ({ recenter, focusOn }), [recenter, focusOn]);
 
-  const { route } = focus;
+  const { route, nextRoute } = focus;
   const hasRoute = route.length > 1;
 
   // Read in effects that should not re-run on each GPS tick.
@@ -82,28 +73,26 @@ export function DeliveryMap({
     courierRef.current = courier;
   }, [courier]);
 
-  // Frame the leg — but not while navigating, when the follow camera owns it.
-  // With no leg drawn, sit on the driver (or the demo fallback before a fix).
+  // Frame the leg(s) — but not while navigating, when the follow camera owns
+  // it. With nothing drawn, sit on the rider (or the city fallback before a fix).
   useEffect(() => {
     if (!isReady || navActive) return;
-
     if (hasRoute) {
-      mapRef.current?.fitToCoordinates(route, {
-        edgePadding: { top: TOP_INSET, right: 64, bottom: bottomInset + 32, left: 64 },
+      mapRef.current?.fitToCoordinates([...route, ...nextRoute], {
+        edgePadding: { top: EDGE.top, right: EDGE.side, bottom: bottomInset + 32, left: EDGE.side },
         animated: true,
       });
     } else {
       mapRef.current?.animateToRegion(
         { ...courierRef.current, latitudeDelta: 0.012, longitudeDelta: 0.01 },
-        600,
+        600
       );
     }
     // Deliberately not keyed on the courier: the map must not chase every GPS
-    // tick while the driver pans around — the first fix below handles that.
-  }, [isReady, route, hasRoute, bottomInset, navActive]);
+    // tick while the rider pans around.
+  }, [isReady, route, nextRoute, hasRoute, bottomInset, navActive]);
 
-  // Jump from the fallback city view to the driver the moment the first real
-  // fix lands, once — later ticks only move the marker.
+  // Jump from the city view to the rider the moment the first real fix lands.
   const centredOnFixRef = useRef(false);
   useEffect(() => {
     if (!isReady || !location || centredOnFixRef.current || navActive || hasRoute) return;
@@ -111,20 +100,16 @@ export function DeliveryMap({
     focusOn(location);
   }, [isReady, location, navActive, hasRoute, focusOn]);
 
-  // Chase the courier: recentre and rotate to the heading on every position tick.
+  // Chase the rider: recentre and rotate to the heading on every position tick.
   useEffect(() => {
     if (!isReady || !navActive || navLat == null || navLng == null) return;
-
     mapRef.current?.animateCamera(
-      {
-        center: { latitude: navLat, longitude: navLng },
-        heading: navHeading,
-        pitch: 50,
-        zoom: 17,
-      },
-      { duration: 400 },
+      { center: { latitude: navLat, longitude: navLng }, heading: navHeading, pitch: 50, zoom: 17 },
+      { duration: 400 }
     );
   }, [isReady, navActive, navLat, navLng, navHeading]);
+
+  const activePath = navigation?.path ?? (hasRoute ? route : null);
 
   return (
     <MapView
@@ -132,59 +117,54 @@ export function DeliveryMap({
       provider={PROVIDER_GOOGLE}
       style={StyleSheet.absoluteFill}
       initialRegion={INITIAL_REGION}
-      mapType={mapType}
-      // Only for the standard tiles: satellite imagery has no styleable
-      // geometry, and a style over it is at best ignored.
-      customMapStyle={isDark && mapType === 'standard' ? DARK_MAP_STYLE : undefined}
+      customMapStyle={isDark ? DARK_MAP_STYLE : LIGHT_MAP_STYLE}
       onMapReady={() => setIsReady(true)}
-      // Off: the CourierPuck below is the driver's marker; the native blue dot
+      // Off: the RiderDot below is the rider's marker; the native blue dot
       // would sit under it as a duplicate.
       showsUserLocation={false}
       showsMyLocationButton={false}
       showsCompass={false}
+      showsPointsOfInterests={false}
       toolbarEnabled={false}
       loadingEnabled
       loadingBackgroundColor={colors.background}>
-      {/* Casing under the stroke gives the route the same weight as in the frames. */}
-      {navigation ? (
+      {/* The upcoming leg, under the active one: dotted, thinner. */}
+      {!navigation && nextRoute.length > 1 ? (
+        <Polyline
+          coordinates={nextRoute}
+          strokeColor={colors.routeNext}
+          strokeWidth={4}
+          lineCap="round"
+          lineDashPattern={[1, 9]}
+          zIndex={1}
+        />
+      ) : null}
+
+      {/* White casing, then the navy line — the active leg reads on any tile. */}
+      {activePath ? (
         <>
-          <Polyline
-            coordinates={navigation.path}
-            strokeColor={colors.routeCasing}
-            strokeWidth={11}
-            zIndex={1}
-          />
-          <Polyline
-            coordinates={navigation.path}
-            strokeColor={colors.route}
-            strokeWidth={7}
-            zIndex={2}
-          />
-        </>
-      ) : route.length > 1 ? (
-        <>
-          <Polyline
-            coordinates={route}
-            strokeColor={colors.routeCasing}
-            strokeWidth={11}
-            zIndex={1}
-          />
-          <Polyline coordinates={route} strokeColor={colors.route} strokeWidth={7} zIndex={2} />
+          <Polyline coordinates={activePath} strokeColor={colors.routeCasing} strokeWidth={10} lineCap="round" lineJoin="round" zIndex={2} />
+          <Polyline coordinates={activePath} strokeColor={colors.route} strokeWidth={5} lineCap="round" lineJoin="round" zIndex={3} />
         </>
       ) : null}
 
-      {focus.origin && !navigation ? <OriginDot coordinate={focus.origin} /> : null}
-      {focus.destination ? <DestinationPin coordinate={focus.destination} /> : null}
+      {focus.markers.map((marker) => (
+        <MapMarker
+          key={`${marker.kind}-${marker.label ?? ''}`}
+          kind={marker.kind}
+          coordinate={marker.coordinate}
+          label={marker.label}
+        />
+      ))}
+
       {focus.etaCoordinate && focus.etaMinutes && !navigation ? (
-        <EtaBadge coordinate={focus.etaCoordinate} minutes={focus.etaMinutes} />
+        <EtaChip coordinate={focus.etaCoordinate} minutes={focus.etaMinutes} />
       ) : null}
 
-      {navigation ? (
-        <NavPuck coordinate={navigation.position} heading={navigation.heading} />
-      ) : null}
-      {/* Only a real fix earns a marker — never the demo fallback point. */}
-      {focus.showCourier && location && pulsing ? <SignalPulse coordinate={location} /> : null}
-      {focus.showCourier && location ? <CourierPuck coordinate={location} /> : null}
+      {navigation ? <NavPuck coordinate={navigation.position} heading={navigation.heading} /> : null}
+      {/* Only a real fix earns a marker — never the city fallback. */}
+      {!navigation && location && pulsing ? <SignalPulse coordinate={location} /> : null}
+      {!navigation && location ? <RiderDot coordinate={location} /> : null}
     </MapView>
   );
 }

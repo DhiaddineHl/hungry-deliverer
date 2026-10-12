@@ -1,10 +1,10 @@
 import { memo, useEffect, useState } from "react";
 import { Circle } from "react-native-maps";
+import { useReducedMotion } from "react-native-reanimated";
 
 import type { LatLng } from "@/features/session/types";
+import { useColors, withAlpha } from "@/theme";
 
-/** Teal (`Colors.teal`, #17A08D) as channels, so the alpha can ride the sweep. */
-const TEAL_RGB = "23,160,141";
 const RINGS = 3;
 /** One full sweep of a ring, ms. */
 const PERIOD = 3600;
@@ -15,7 +15,7 @@ const FRAME_MS = 1000 / 30;
 
 /**
  * Radar rings rippling out from the driver while the app is looking for
- * orders — the "I'm broadcasting my position" signal of the Finding frame.
+ * orders. Orange, because it is a signal ("searching"), not an action.
  *
  * Drawn as native map circles rather than an animated marker view: on Android
  * a custom marker is rasterised to a bitmap that is only re-snapshotted on a
@@ -30,13 +30,17 @@ export const SignalPulse = memo(function SignalPulse({
 }: {
   coordinate: LatLng;
 }) {
+  const colors = useColors();
+  const reduceMotion = useReducedMotion();
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
+    // Under Reduce Motion the rings hold still, mid-sweep.
+    if (reduceMotion) return;
     const start = Date.now();
     const timer = setInterval(() => setElapsed(Date.now() - start), FRAME_MS);
     return () => clearInterval(timer);
-  }, []);
+  }, [reduceMotion]);
 
   return (
     <>
@@ -52,8 +56,8 @@ export const SignalPulse = memo(function SignalPulse({
             center={coordinate}
             radius={MIN_RADIUS + eased * (MAX_RADIUS - MIN_RADIUS)}
             strokeWidth={1.5}
-            strokeColor={`rgba(${TEAL_RGB},${(fade * 0.7).toFixed(3)})`}
-            fillColor={`rgba(${TEAL_RGB},${(fade * 0.16).toFixed(3)})`}
+            strokeColor={withAlpha(colors.primary, Number((fade * 0.55).toFixed(3)))}
+            fillColor={withAlpha(colors.primary, Number((fade * 0.16).toFixed(3)))}
             zIndex={1}
           />
         );

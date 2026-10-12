@@ -6,6 +6,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   type ReactNode,
 } from 'react';
 import { AppState } from 'react-native';
@@ -49,7 +50,10 @@ const INITIAL_STATE: SessionState = {
 };
 
 /** How close the driver has to be to the store for "Validate Order" to unlock. */
-const ARRIVAL_RADIUS_METERS = 120;
+export const ARRIVAL_RADIUS_METERS = 120;
+
+/** How close the driver has to be to the customer for "Confirm Delivery" to unlock. */
+export const DELIVERY_RADIUS_METERS = 200;
 
 /** How long the "Great work!" screen stays up before the driver goes looking again. */
 const COMPLETED_PAUSE_MS = 6_000;
@@ -132,15 +136,33 @@ export type SessionActions = {
   validateOrder: () => void;
   confirmDelivery: () => void;
   setSheetExpanded: (expanded: boolean) => void;
+  /**
+   * The map screen reports itself open (true on mount, false on unmount). GPS
+   * — and the permission prompt — only start once it is, never on app open.
+   */
+  setMapOpen: (open: boolean) => void;
 };
+
+/** Which trip report is in flight or failed — pickup or delivery. */
+export type StatusReport = 'pickup' | 'delivery';
 
 type SessionContextValue = SessionState & {
   actions: SessionActions;
   locationGranted: boolean;
+  /** A real GPS fix exists — going online needs one (see `goOnline`). */
+  canGoOnline: boolean;
+  /** Going online was refused by the backend or the network. */
+  goOnlineFailed: boolean;
+  /** A pickup / delivery report waiting on the backend. */
+  reportPending: StatusReport | null;
+  /** The last pickup / delivery report the backend did not accept. */
+  reportFailed: StatusReport | null;
   /** The driver's real live position, or `null` until the first GPS fix. */
   location: LatLng | null;
   /** `location`, falling back to the demo start point until the first fix. */
   courier: LatLng;
+  /** On the customer leg and within `DELIVERY_RADIUS_METERS` of the drop-off. */
+  nearCustomer: boolean;
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -174,6 +196,8 @@ const SessionContext = createContext<SessionContextValue | null>(null);
  *   - `toStore` → `orderReady`: a live proximity check (haversine distance to
  *     the store) — there is no backend signal for "the restaurant marked this
  *     ready" reaching the driver today.
+ *   - `confirmDelivery` unlocks within `DELIVERY_RADIUS_METERS` of the
+ *     customer (`nearCustomer`), not only on the exact drop-off point.
  *   - `validateOrder` / `confirmDelivery`: `POST /api/deliveries/{id}/status`
  *     (`PICKED_UP` / `DELIVERED`). Pickup is what switches the map to the
  *     customer leg.
@@ -182,13 +206,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
   const { phase, order } = state;
 
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { data: driver } = useDriver(user?.sub);
   const driverId = driver?.id ?? null;
+  const [mapOpen, setMapOpen] = useState(false);
 
   const { granted: locationGranted, location, courier } = useDriverLocation({
+    // Signed in and looking at the map — not merely the app being open.
+    enabled: isAuthenticated && mapOpen,
     driverId,
     reportEnabled: phase !== 'offline',
+    // Accepted until delivered: the customer follows this position live.
+    tracking: phase === 'toStore' || phase === 'orderReady' || phase === 'toCustomer',
   });
   const availabilityMutation = useDriverAvailability();
 
@@ -197,6 +226,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     courierRef.current = courier;
   }, [courier]);
+  // The real fix only — never the demo fallback. This is what is reported to
+  // the backend as the rider's position.
+  const locationRef = useRef<LatLng | null>(location);
+  useEffect(() => {
+    locationRef.current = location;
+  }, [location]);
+  const [goOnlineFailed, setGoOnlineFailed] = useState(false);
+  const [reportPending, setReportPending] = useState<StatusReport | null>(null);
+  const [reportFailed, setReportFailed] = useState<StatusReport | null>(null);
   const stateRef = useRef<SessionState>(state);
   useEffect(() => {
     stateRef.current = state;
@@ -208,11 +246,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // this is what makes that fetch a no-op.
   const closedOrderIdRef = useRef<string | null>(null);
 
-  // `courier` already falls back to the demo start point, so this needs no
-  // dependency on the live position and stays stable across GPS ticks —
-  // everything below that re-registers availability hangs off it.
+  // Registers the rider at their real position. With no GPS fix there is
+  // nothing true to send: the dispatcher would match offers against the demo
+  // fallback point in the city centre, so the call is skipped (and Go online
+  // stays disabled until a fix arrives). Stable across GPS ticks — everything
+  // below that re-registers availability hangs off it.
   const registerAvailable = useCallback((onError?: (error: unknown) => void) => {
-    const position = courierRef.current;
+    const position = locationRef.current;
+    if (!position) {
+      onError?.(new Error('No location fix yet'));
+      return;
+    }
     availabilityMutation.mutate(
       { available: true, latitude: position.latitude, longitude: position.longitude },
       { onError }
@@ -230,10 +274,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [registerAvailable]
   );
 
+  // Signing out — or the server ending the session — must also end the shift:
+  // no offers, no availability, no position reports for an account that is
+  // no longer signed in on this device.
+  useEffect(() => {
+    if (!isAuthenticated) dispatch({ type: 'STOP_SESSION' });
+  }, [isAuthenticated]);
+
   const goOnline = useCallback(() => {
+    if (!locationRef.current) return;
+    setGoOnlineFailed(false);
     dispatch({ type: 'GO_ONLINE' });
     registerAvailable((error) => {
-      console.warn('[Session] Could not go online:', error);
+      if (__DEV__) console.warn('[Session] Could not go online:', error);
+      setGoOnlineFailed(true);
       dispatch({ type: 'STOP_SESSION' });
     });
   }, [registerAvailable]);
@@ -293,7 +347,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'OFFER_RECEIVED', order: toSessionOrder(offer, courierRef.current) });
         })
         .catch((error) => {
-          console.warn('[Session] Could not check for a pending offer:', error);
+          if (__DEV__) console.warn('[Session] Could not check for a pending offer:', error);
         });
     };
 
@@ -312,7 +366,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const orderId = order.orderId;
     closeOffer(orderId);
     declineOfferRequest(orderId).catch((error) => {
-      console.warn('[Session] Could not decline the offer:', error);
+      if (__DEV__) console.warn('[Session] Could not decline the offer:', error);
     });
   }, [order, closeOffer]);
 
@@ -336,13 +390,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .catch((error) => {
         if (isApiError(error, 409)) {
           // Expired or already answered — the offer is gone whatever we do.
-          console.warn('[Session] Offer is no longer available:', error.message);
+          if (__DEV__) console.warn('[Session] Offer is no longer available:', error.message);
           closeOffer(orderId);
           return;
         }
         // Transient failure: leave the card up so the driver can retry before
         // the countdown runs out.
-        console.warn('[Session] Could not accept the offer:', error);
+        if (__DEV__) console.warn('[Session] Could not accept the offer:', error);
         dispatch({ type: 'ACCEPT_FAILED' });
       });
   }, [order, state.accepting, closeOffer]);
@@ -355,27 +409,53 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [phase, order, location]);
 
-  const validateOrder = useCallback(() => {
-    if (!order?.deliveryId || !driverId) return;
-    dispatch({ type: 'VALIDATE_ORDER' });
-    const position = location ?? courierRef.current;
-    updateDeliveryStatus(order.deliveryId, driverId, order.orderId, 'PICKED_UP', position).catch(
-      (error) => {
-        console.warn('[Session] Could not report pickup:', error);
+  /**
+   * Reports pickup / delivery and only then moves the trip on. The backend
+   * owns these transitions — a delivery it refused (409, network) must not be
+   * shown to the rider as done, or the order is stranded with nobody holding
+   * it. A failure leaves the phase where it was and flags the report, so the
+   * sheet can say so and the rider can try again.
+   */
+  const report = useCallback(
+    async (kind: StatusReport, onAccepted: () => void) => {
+      const position = locationRef.current;
+      if (!order?.deliveryId || !driverId || !position || reportPending) return;
+      setReportFailed(null);
+      setReportPending(kind);
+      try {
+        await updateDeliveryStatus(
+          order.deliveryId,
+          driverId,
+          order.orderId,
+          kind === 'pickup' ? 'PICKED_UP' : 'DELIVERED',
+          position
+        );
+        onAccepted();
+      } catch (error) {
+        if (__DEV__) console.warn(`[Session] Could not report ${kind}:`, error);
+        setReportFailed(kind);
+      } finally {
+        setReportPending(null);
       }
-    );
-  }, [order, driverId, location]);
+    },
+    [order, driverId, reportPending]
+  );
+
+  const validateOrder = useCallback(() => {
+    void report('pickup', () => dispatch({ type: 'VALIDATE_ORDER' }));
+  }, [report]);
+
+  // No need to stand on the exact pin — anywhere within the radius counts.
+  const nearCustomer =
+    phase === 'toCustomer' &&
+    !!order &&
+    !!location &&
+    haversine(location, order.customer.coordinate) <= DELIVERY_RADIUS_METERS;
 
   const confirmDelivery = useCallback(() => {
-    if (!order?.deliveryId || !driverId) return;
-    dispatch({ type: 'CONFIRM_DELIVERY' });
-    const position = location ?? courierRef.current;
-    updateDeliveryStatus(order.deliveryId, driverId, order.orderId, 'DELIVERED', position).catch(
-      (error) => {
-        console.warn('[Session] Could not report delivery:', error);
-      }
-    );
-  }, [order, driverId, location]);
+    if (!nearCustomer) return;
+    void report('delivery', () => dispatch({ type: 'CONFIRM_DELIVERY' }));
+  }, [report, nearCustomer]);
 
   // Back to looking, automatically, after a pause to show "Great work!" —
   // goes through the same real availability call goOnline does, since the
@@ -396,8 +476,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     () => ({
       ...state,
       locationGranted,
+      canGoOnline: location !== null,
+      goOnlineFailed,
+      reportPending,
+      reportFailed,
       location,
       courier,
+      nearCustomer,
       actions: {
         goOnline,
         stopSession,
@@ -407,13 +492,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         validateOrder,
         confirmDelivery,
         setSheetExpanded,
+        setMapOpen,
       },
     }),
     [
       state,
       locationGranted,
+      goOnlineFailed,
+      reportPending,
+      reportFailed,
       location,
       courier,
+      nearCustomer,
       goOnline,
       stopSession,
       previewLeg,

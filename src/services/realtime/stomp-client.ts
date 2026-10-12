@@ -1,3 +1,4 @@
+import { BROKER_URL } from '@/config/env';
 import { isTokenExpired, refreshAccessToken } from '@/services/keycloak/auth-service';
 import { getTokens } from '@/services/keycloak/token-storage';
 import { Client, type IMessage, type StompSubscription } from '@stomp/stompjs';
@@ -26,11 +27,6 @@ interface Registration {
 let client: Client | null = null;
 const registrations = new Set<Registration>();
 
-function resolveBrokerUrl(): string {
-  const apiBase = process.env.EXPO_PUBLIC_API_URL ?? 'http://172.29.80.1:8080';
-  return `${apiBase.replace(/^http/, 'ws')}/ws/websocket`;
-}
-
 function parseBody(body: string): unknown {
   try {
     return JSON.parse(body);
@@ -43,7 +39,7 @@ function ensureClient(): Client {
   if (client) return client;
 
   const stomp = new Client({
-    brokerURL: resolveBrokerUrl(),
+    brokerURL: BROKER_URL,
     reconnectDelay: 4000,
     heartbeatIncoming: 10000,
     heartbeatOutgoing: 10000,
@@ -72,7 +68,7 @@ function ensureClient(): Client {
   };
 
   stomp.onConnect = () => {
-    console.log(`[Realtime] Connected, replaying ${registrations.size} subscription(s)`);
+    if (__DEV__) console.log(`[Realtime] Connected, replaying ${registrations.size} subscription(s)`);
     for (const registration of registrations) {
       registration.subscription = stomp.subscribe(registration.destination, (message: IMessage) => {
         registration.listener(parseBody(message.body));
@@ -83,15 +79,15 @@ function ensureClient(): Client {
   // A failed connection used to be invisible — nothing logged, subscriptions
   // simply never delivered. These are the three ways it fails.
   stomp.onStompError = (frame) => {
-    console.warn('[Realtime] STOMP error:', frame.headers.message ?? frame.body);
+    if (__DEV__) console.warn('[Realtime] STOMP error:', frame.headers.message ?? frame.body);
   };
   stomp.onWebSocketError = (event: unknown) => {
     const message = event && typeof event === 'object' && 'message' in event ? event.message : event;
-    console.warn(`[Realtime] WebSocket error against ${stomp.brokerURL}:`, message);
+    if (__DEV__) console.warn(`[Realtime] WebSocket error against ${stomp.brokerURL}:`, message);
   };
   stomp.onWebSocketClose = (event: { code?: number; reason?: string }) => {
     if (stomp.active) {
-      console.warn(`[Realtime] WebSocket closed (${event.code} ${event.reason ?? ''}) — reconnecting`);
+      if (__DEV__) console.warn(`[Realtime] WebSocket closed (${event.code} ${event.reason ?? ''}) — reconnecting`);
     }
   };
 
@@ -129,6 +125,22 @@ export function subscribeToTopic(destination: string, listener: Listener): () =>
  * retries, and a dropped position ping needs no user-visible error the way a
  * dropped delivery-status change would.
  */
+/**
+ * Tears the connection down and forgets every subscription. Called on sign-out:
+ * the STOMP session was authenticated with the previous rider's token at
+ * CONNECT time, so keeping it open would let the next account on this device
+ * inherit that identity — receiving the previous rider's offers and publishing
+ * positions under their id. The next `subscribeToTopic` builds a fresh client
+ * that connects with whatever token is stored then.
+ */
+export async function disconnectRealtime(): Promise<void> {
+  for (const registration of registrations) registration.subscription?.unsubscribe();
+  registrations.clear();
+  const current = client;
+  client = null;
+  await current?.deactivate();
+}
+
 export function publishToDestination(destination: string, body: unknown): void {
   const stomp = ensureClient();
   if (!stomp.connected) return;

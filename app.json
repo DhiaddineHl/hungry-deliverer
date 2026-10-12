@@ -39,7 +39,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#03324A",
+          "backgroundColor": "#003049",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
@@ -60,10 +60,18 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Hungry Deliverer uses your photos to attach the documents of your deliverer application.",
+          "cameraPermission": "Hungry Deliverer uses your camera to take your live photo and pictures of your documents for your deliverer application.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/images/android-icon-monochrome.png",
-          "color": "#E8890C",
+          "color": "#EA8608",
           "defaultChannel": "orders"
         }
       ],
@@ -74,7 +82,8 @@
             "./node_modules/@expo-google-fonts/poppins/400Regular/Poppins_400Regular.ttf",
             "./node_modules/@expo-google-fonts/poppins/500Medium/Poppins_500Medium.ttf",
             "./node_modules/@expo-google-fonts/poppins/600SemiBold/Poppins_600SemiBold.ttf",
-            "./node_modules/@expo-google-fonts/poppins/700Bold/Poppins_700Bold.ttf"
+            "./node_modules/@expo-google-fonts/poppins/700Bold/Poppins_700Bold.ttf",
+            "./node_modules/@expo-google-fonts/poppins/800ExtraBold/Poppins_800ExtraBold.ttf"
           ]
         }
       ]

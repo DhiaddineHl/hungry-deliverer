@@ -1,42 +1,39 @@
-import type { Ionicons } from '@expo/vector-icons';
-import type { ComponentProps } from 'react';
+import type { IconName } from '@/theme';
 
-type IoniconName = ComponentProps<typeof Ionicons>['name'];
-
-/** Maps a Routes API manoeuvre enum to an arrow icon for the guidance banner. */
-export function maneuverIcon(maneuver: string): IoniconName {
+/** Maps a Routes API manoeuvre enum to an icon for the guidance banner. */
+export function maneuverIcon(maneuver: string): IconName {
   switch (maneuver) {
     case 'TURN_LEFT':
     case 'TURN_SHARP_LEFT':
     case 'RAMP_LEFT':
     case 'FORK_LEFT':
-      return 'arrow-back';
+      return 'turnLeft';
     case 'TURN_SLIGHT_LEFT':
-      return 'return-up-back';
+      return 'slightLeft';
     case 'TURN_RIGHT':
     case 'TURN_SHARP_RIGHT':
     case 'RAMP_RIGHT':
     case 'FORK_RIGHT':
-      return 'arrow-forward';
+      return 'turnRight';
     case 'TURN_SLIGHT_RIGHT':
-      return 'return-up-forward';
+      return 'slightRight';
     case 'UTURN_LEFT':
     case 'UTURN_RIGHT':
-      return 'return-down-back';
+      return 'uTurn';
     case 'ROUNDABOUT_LEFT':
     case 'ROUNDABOUT_RIGHT':
     case 'ROUNDABOUT_CLOCKWISE':
     case 'ROUNDABOUT_COUNTERCLOCKWISE':
-      return 'sync';
+      return 'roundabout';
     case 'MERGE':
-      return 'git-merge';
+      return 'merge';
     case 'DEPART':
       return 'navigate';
     case 'DESTINATION':
     case 'DESTINATION_LEFT':
     case 'DESTINATION_RIGHT':
-      return 'flag';
+      return 'arrive';
     default:
-      return 'arrow-up';
+      return 'straight';
   }
 }

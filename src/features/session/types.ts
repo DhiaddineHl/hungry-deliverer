@@ -54,6 +54,10 @@ export type Order = {
   orderId: string;
   deliveryId: string | null;
   totalTnd: number;
+  /** The rider's earnings for the trip, when the backend provides them. */
+  riderEarningsTnd: number | null;
+  /** How the customer pays; `null` while the backend does not say. */
+  paymentMethod: 'cash' | 'online' | null;
   durationMinutes: number;
   distanceKm: number;
   minutesToPickup: number;
